@@ -10,16 +10,21 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <math.h>
+#include <sys/types.h>
+#include <dirent.h>
 
 #include <libconfig.h>
 #include "usenet.h"
 
 #define USENET_SETTINGS_FILE "../config/usenet.cfg"
+#define USENET_PROC_PATH "/proc"
 
 #define USENET_GET_SETTING_STRING(name)								\
     if((_setting = config_lookup(&login->_config, #name)) != NULL)	\
 		(login->name)  = config_setting_get_string(_setting)
-
+#define USENET_GET_SETTING_INT(name)								\
+    if((_setting = config_lookup(&login->_config, #name)) != NULL)	\
+		(login->name)  = config_setting_get_int(_setting)
 
 /* load configuration settings from file */
 int usenet_utils_load_config(struct gapi_login* login)
@@ -55,6 +60,7 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(server_port);
 	USENET_GET_SETTING_STRING(nzburl);
 	USENET_GET_SETTING_STRING(mac_addr);
+	USENET_GET_SETTING_INT(scan_freq);
     return USENET_SUCCESS;
 }
 
@@ -179,4 +185,39 @@ clean_up:
 	USENET_LOG_MESSAGE_ARGS("closing file: %s", path);
 	close(_fd);
 	return _err;
+}
+
+/* find the process with the name */
+pid_t usenet_find_process(const char* pname)
+{
+	DIR* _proc_dir = NULL;
+	struct dirent* _dir_ent = NULL;
+	long _lpid = -1;											/* pid of process */
+
+	/* open proc file system */
+	_proc_dir = opendir(USENET_PROC_PATH);
+	if(_proc_dir == NULL) {
+		USENET_LOG_MESSAGE("unable to open the proc file system");
+		return USENET_ERROR;
+	}
+
+	/* iterate through the directorys and find the process name pname */
+	while(!(_dir_ent = readdir(_proc_dir))) {
+
+		/*
+		 * Get convert the directory name to long value.
+		 * We excpect the names to have process id.
+		 */
+		_lpid = atol(_dir_ent->d_name);
+
+		/* continue looking if its not a process value */
+		if(_lpid < 0)
+			continue;
+
+
+
+	}
+
+	/* close directory */
+	closedir(_proc_dir);
 }

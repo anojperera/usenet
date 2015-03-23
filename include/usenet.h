@@ -24,6 +24,7 @@
 #define USENET_CMD_BUFF_SZ 1
 #define USENET_JSON_BUFF_SZ 151
 #define USENET_LOG_MESSAGE_SZ 256
+#define USENET_PROC_FILE_BUFF_SZ 512
 
 struct gapi_login
 {
@@ -38,6 +39,7 @@ struct gapi_login
 	const char* server_port;		/* server port */
 	const char* nzburl;				/* search url */
 	const char* mac_addr;			/* mac address of the client */
+	int scan_freq;					/* frequency scan the instructions */
     int exp;						/* expiry time since unix start */
     int iat;						/* start time since unix start time */
 	config_t _config;

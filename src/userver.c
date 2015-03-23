@@ -52,17 +52,19 @@ int stop_server(struct userver* svr);
 
 
 
-struct userver server;										/* server */
-volatile sig_atomic_t term_sig = 1;							/* signal */
+struct userver server;												/* server */
+volatile sig_atomic_t term_sig = 1;									/* signal */
 int main(int argc, char** argv)
 {
+	int sec_cnt = 0;												/* second counter */
 
 	if(init_server(&server) == USENET_ERROR)
 		return USENET_ERROR;
 
 	signal(SIGINT, _signal_hanlder);
 	while(term_sig) {
-		_initialise_contact(&server);
+		if(sec_cnt++ % server._login.scan_freq)
+			_initialise_contact(&server);
 		sleep(1);
 	}
 
