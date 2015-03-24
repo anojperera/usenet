@@ -131,7 +131,7 @@ int usenet_read_file(const char* path, char** buff, size_t* sz)
 	char* _err_str = NULL;
 	off_t _size = 0;
 	struct stat _fstat = {};
-	int _err = 0;
+	int _err = USENET_SUCCESS;
 
 	/* check arguments */
 	if(!path || !buff || !sz)
@@ -164,6 +164,7 @@ int usenet_read_file(const char* path, char** buff, size_t* sz)
 	/* get file size */
 	_size = _fstat.st_size;
 	if(_size <= 0) {
+		_err = USENET_ERROR;
 		USENET_LOG_MESSAGE("files size is less than 0, nothing to read");
 		goto clean_up;
 	}
@@ -171,13 +172,15 @@ int usenet_read_file(const char* path, char** buff, size_t* sz)
 	/* create buffer */
 	*buff = (char*) malloc(sizeof(char) * (size_t) (_size+1));
 	*sz = read(_fd, *buff, (size_t) _size);
-	if(*sz) {
+	if(*sz < 0) {
+
 		/* error have occured, get error string */
 		_err = errno;
 		_err_str = strerror(errno);
 		USENET_LOG_MESSAGE(_err_str);
 		goto clean_up;
 	}
+
 	/* add NULL pointer to NULL terminate the buffer */
 	(*buff)[*sz] = '\0';
 
@@ -192,7 +195,19 @@ pid_t usenet_find_process(const char* pname)
 {
 	DIR* _proc_dir = NULL;
 	struct dirent* _dir_ent = NULL;
-	long _lpid = -1;											/* pid of process */
+	long _lpid = -1, _lspid = -1;								/* pid of process */
+	char _stat_file[USENET_PROC_FILE_BUFF_SZ] = {0};
+
+	char* _stat_buff = NULL;									/* stat buffer */
+	size_t _stat_buff_sz = 0;									/* stat buffer size */
+
+	char _pname[USENET_PROC_NAME_BUFF_SZ] = {0};
+
+
+	if(pname == NULL)
+		return USENET_ERROR;
+
+	USENET_LOG_MESSAGE_ARGS("finding if process %s exists", pname);
 
 	/* open proc file system */
 	_proc_dir = opendir(USENET_PROC_PATH);
@@ -204,6 +219,17 @@ pid_t usenet_find_process(const char* pname)
 	/* iterate through the directorys and find the process name pname */
 	while(!(_dir_ent = readdir(_proc_dir))) {
 
+		if(_stat_buff != NULL)
+			free(_stat_buff);
+
+		/*
+		 * Initialise the temporary variables passed to the open file method.
+		 */
+		_lspid = -1;
+		_stat_buff = NULL;
+		_stat_buff_sz = 0;
+		memset(_stat_file, 0, USENET_PROC_FILE_BUFF_SZ);
+
 		/*
 		 * Get convert the directory name to long value.
 		 * We excpect the names to have process id.
@@ -214,10 +240,28 @@ pid_t usenet_find_process(const char* pname)
 		if(_lpid < 0)
 			continue;
 
+		/* construct the stat file path for the pid */
+		sprintf(_stat_file, "%s/%ld/%s", USENET_PROC_PATH, _lpid, "stat");
 
+		if(usenet_read_file(_stat_file, &_stat_buff, &_stat_buff_sz) <= USENET_ERROR) {
+			continue;
+		}
 
+		/* load the stat files parameters in to the variables */
+		sscanf(_stat_buff, "%ld (%[^)])", &_lspid, _pname);
+
+		/* If the pid is found return */
+		if(strcmp(_pname, pname) == 0)
+			break;
+
+		memset(_pname, 0, USENET_PROC_NAME_BUFF_SZ);
 	}
+
+	if(_stat_buff != NULL)
+		free(_stat_buff);
 
 	/* close directory */
 	closedir(_proc_dir);
+
+	return _lspid;
 }

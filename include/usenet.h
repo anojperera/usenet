@@ -25,6 +25,8 @@
 #define USENET_JSON_BUFF_SZ 151
 #define USENET_LOG_MESSAGE_SZ 256
 #define USENET_PROC_FILE_BUFF_SZ 512
+#define USENET_PROC_NAME_BUFF_SZ 256
+
 
 struct gapi_login
 {
@@ -62,10 +64,14 @@ int usenent_message_response_instruct(struct usenet_message* msg);				/* Respons
 int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url);			/* search get and issue rpc call to nzbget */
 int usenet_read_file(const char* path, char** buff, size_t* sz);					/* Read contents of a file pointed by file path */
 
+pid_t usenet_find_process(const char* pname);									/* find process id */
+
 #define USENET_REQUEST_RESPONSE 0x00
-#define USENET_REQUEST_COMMAND 0x01
-#define USENET_REQUEST_DOWNLOAD 0x02
-#define USENET_REQUEST_FUNCTION 0x03
+#define USENET_REQUEST_RESPONSE_PENDING 0x01
+#define USENET_REQUEST_RESET 0x02
+#define USENET_REQUEST_COMMAND 0x03
+#define USENET_REQUEST_DOWNLOAD 0x04
+#define USENET_REQUEST_FUNCTION 0x05
 
 /* helper method for logging */
 static inline __attribute__ ((always_inline)) void _usenet_log_message(const char* msg)

@@ -7,17 +7,19 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
+#include <gqueue.h>
 #include "usenet.h"
 #include "thcon.h"
 
 #define USENET_CLIENT_MSG_SZ 256
 #define USENET_CLIENT_MSG_PULSE_GAP 5
+#define USENET_CLIENT_NZBGET_CLIENT "nzbget"
 
 /* struct to encapsulate server component */
 struct uclient
 {
 	sig_atomic_t _init_flg;										/* flag to indicate initialised struct */
-	unsigned int _act_ix;									/* index for the action to be taken */
+	unsigned int _act_ix;										/* index for the action to be taken */
 
 	int _pulse_counter;											/* pulse counter */
 	const char* _server_name;									/* server name */
@@ -25,6 +27,7 @@ struct uclient
 
 	struct gapi_login _login;									/* struct containing login settings */
 	pthread_t _thread;											/* thread */
+	pthread_mutex_t _mutex;										/* queue mutex */
 	thcon _connection;											/* connection object */
 };
 
@@ -32,6 +35,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz);
 static void _signal_hanlder(int signal);
 static inline __attribute__ ((always_inline)) int _default_response(struct uclient* client, struct usenet_message* msg);
 static int _msg_handler(struct uclient* cli, struct usenet_message* msg);
+static int _action_json(const char* json_msg);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -209,24 +213,47 @@ static int _default_response(struct uclient* client, struct usenet_message* msg)
 static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 {
 
+	if(msg->ins == USENET_REQUEST_RESET) {
+		USENET_LOG_MESSAGE("request reset complied");
+		_default_response(cli, msg);
+		cli->_act_ix = 0;
+	}
+
 	switch(cli->_act_ix) {
 	case 0:
 		/* if the index is zero look for the messages request command */
 		if(msg->ins == USENET_REQUEST_COMMAND) {
 			USENET_LOG_MESSAGE("request command received, sending response");
 			_default_response(cli, msg);
+			cli->_act_ix++;
 		}
-		cli->_act_ix++;
 		break;
 	case 1:
 		if(msg->ins == USENET_REQUEST_FUNCTION) {
 			USENET_LOG_MESSAGE_ARGS("json rpc request received, message body: %s", msg->msg_body);
 			_default_response(cli, msg);
+			cli->_act_ix++;
+			/* look for process */
+			_action_json(msg->msg_body);
 		}
-		cli->_act_ix++;
 		break;
 	default:
 		USENET_LOG_MESSAGE("unkown request received");
+	}
+
+	return 0;
+}
+
+static int _action_json(const char* json_msg)
+{
+	pid_t _nzbget_pid = -1;
+
+	_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
+	if(_nzbget_pid < 0) {
+		USENET_LOG_MESSAGE("process not initialised");
+	}
+	else {
+		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
 	}
 
 	return 0;
