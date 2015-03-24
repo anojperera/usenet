@@ -194,12 +194,10 @@ clean_up:
 pid_t usenet_find_process(const char* pname)
 {
 	DIR* _proc_dir = NULL;
+	FILE* _stat_fp = NULL;
 	struct dirent* _dir_ent = NULL;
 	long _lpid = -1, _lspid = -1;								/* pid of process */
 	char _stat_file[USENET_PROC_FILE_BUFF_SZ] = {0};
-
-	char* _stat_buff = NULL;									/* stat buffer */
-	size_t _stat_buff_sz = 0;									/* stat buffer size */
 
 	char _pname[USENET_PROC_NAME_BUFF_SZ] = {0};
 
@@ -217,17 +215,12 @@ pid_t usenet_find_process(const char* pname)
 	}
 
 	/* iterate through the directorys and find the process name pname */
-	while(!(_dir_ent = readdir(_proc_dir))) {
-
-		if(_stat_buff != NULL)
-			free(_stat_buff);
+	while((_dir_ent = readdir(_proc_dir))) {
 
 		/*
 		 * Initialise the temporary variables passed to the open file method.
 		 */
 		_lspid = -1;
-		_stat_buff = NULL;
-		_stat_buff_sz = 0;
 		memset(_stat_file, 0, USENET_PROC_FILE_BUFF_SZ);
 
 		/*
@@ -243,12 +236,15 @@ pid_t usenet_find_process(const char* pname)
 		/* construct the stat file path for the pid */
 		sprintf(_stat_file, "%s/%ld/%s", USENET_PROC_PATH, _lpid, "stat");
 
-		if(usenet_read_file(_stat_file, &_stat_buff, &_stat_buff_sz) <= USENET_ERROR) {
+		_stat_fp = fopen(_stat_file, "r");
+		if(_stat_fp == NULL)
 			continue;
-		}
 
 		/* load the stat files parameters in to the variables */
-		sscanf(_stat_buff, "%ld (%[^)])", &_lspid, _pname);
+		if(fscanf(_stat_fp, "%ld (%[^)])", &_lspid, _pname) != 2)
+			USENET_LOG_MESSAGE_ARGS("unable to get the details from %s", _stat_file);
+
+		fclose(_stat_fp);
 
 		/* If the pid is found return */
 		if(strcmp(_pname, pname) == 0)
@@ -256,9 +252,6 @@ pid_t usenet_find_process(const char* pname)
 
 		memset(_pname, 0, USENET_PROC_NAME_BUFF_SZ);
 	}
-
-	if(_stat_buff != NULL)
-		free(_stat_buff);
 
 	/* close directory */
 	closedir(_proc_dir);
