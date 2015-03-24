@@ -251,10 +251,13 @@ static int _action_json(const char* json_msg)
 	_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
 	if(_nzbget_pid < 0) {
 		USENET_LOG_MESSAGE("process not initialised");
-	}
-	else {
-		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
-	}
 
-	return 0;
+		/* start nzbget as a deamon */
+	}
+	else
+		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
+
+
+
+	return USENET_SUCCESS;
 }
