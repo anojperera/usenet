@@ -220,7 +220,6 @@ pid_t usenet_find_process(const char* pname)
 		/*
 		 * Initialise the temporary variables passed to the open file method.
 		 */
-		_lspid = -1;
 		memset(_stat_file, 0, USENET_PROC_FILE_BUFF_SZ);
 
 		/*
@@ -251,6 +250,7 @@ pid_t usenet_find_process(const char* pname)
 			break;
 
 		memset(_pname, 0, USENET_PROC_NAME_BUFF_SZ);
+		_lspid = -1;
 	}
 
 	/* close directory */
