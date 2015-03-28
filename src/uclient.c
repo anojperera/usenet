@@ -247,12 +247,23 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 static int _action_json(const char* json_msg)
 {
 	pid_t _nzbget_pid = -1;
+	pid_t _f_pid = -1;
 
 	_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
 	if(_nzbget_pid < 0) {
-		USENET_LOG_MESSAGE("process not initialised");
+		USENET_LOG_MESSAGE("process not initialised, spawning nzbget");
 
-		/* start nzbget as a deamon */
+		/* fork the process here, call system to spawn nzbget */
+		_f_pid = fork();
+		if(_f_pid == 0) {
+
+			/* this is the child process therefore spawn nzbget */
+			USENET_LOG_MESSAGE("starting nzbget as a deamon");
+			system("nzbget -D");
+
+			/* raise signal to terminate self */
+			raise(SIGINT);
+		}
 	}
 	else
 		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
