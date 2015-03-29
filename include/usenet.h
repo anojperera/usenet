@@ -62,6 +62,14 @@ struct usenet_message
 	char msg_body[USENET_JSON_BUFF_SZ];
 };
 
+/* Usenet string array */
+struct usenet_str_arr
+{
+	char** _arr;
+	size_t _sz;
+};
+
+
 int usenet_utils_load_config(struct gapi_login* login);
 int usenet_destroy_config(struct gapi_login* login);
 
@@ -84,7 +92,8 @@ size_t usenet_utils_count_blanks(const char* message);
  * JSON Parser helper methods
  */
 int usjson_parse_message(const char* msg, jsmntok_t** tok, int* num);
-int usjson_get_token(jsmntok_t* tok, size_t num_tokens, const char* key, char** msg, size_t* sz, jsmntok_t* obj);
+int usjson_get_token(const char* msg, jsmntok_t* tok, size_t num_tokens, const char* key, char** value, jsmntok_t** obj);
+int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_str_arr* str_arr);
 
 #define USENET_REQUEST_RESPONSE 0x00
 #define USENET_REQUEST_RESPONSE_PENDING 0x01
