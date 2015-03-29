@@ -7,6 +7,7 @@
 #define _USENET_H_
 
 #include <stdlib.h>
+#include <unistd.h>
 #include <time.h>
 #include <libconfig.h>
 #include <sys/types.h>
@@ -27,6 +28,8 @@
 #define USENET_PROC_FILE_BUFF_SZ 512
 #define USENET_PROC_NAME_BUFF_SZ 256
 
+#define USENET_PULSE_SENT 1
+#define USENET_PULSE_RESET 0
 
 struct gapi_login
 {
@@ -44,6 +47,7 @@ struct gapi_login
 	int scan_freq;					/* frequency scan the instructions */
     int exp;						/* expiry time since unix start */
     int iat;						/* start time since unix start time */
+	int svr_wait_time;				/* default server wait time */
 	config_t _config;
 };
 
@@ -72,13 +76,14 @@ pid_t usenet_find_process(const char* pname);									/* find process id */
 #define USENET_REQUEST_COMMAND 0x03
 #define USENET_REQUEST_DOWNLOAD 0x04
 #define USENET_REQUEST_FUNCTION 0x05
+#define USENET_REQUEST_PULSE 0x06
 
 /* helper method for logging */
 static inline __attribute__ ((always_inline)) void _usenet_log_message(const char* msg)
 {
 	struct tm* _time;
 	int _len = 0;
-	char _buff[USENET_LOG_MESSAGE_SZ] = {};
+	char _buff[USENET_LOG_MESSAGE_SZ] = {0};
 
 	/* Get current time */
 	time_t _now = time(NULL);
@@ -88,7 +93,7 @@ static inline __attribute__ ((always_inline)) void _usenet_log_message(const cha
 	_len = strftime (_buff, USENET_LOG_MESSAGE_SZ, "[%Y-%m-%dT%H:%M:%S] ", _time);
 
 	/* format the rest of the message */
-	sprintf(_buff+_len, "%s", msg);
+	sprintf(_buff+_len, "[%d] %s", getpid(), msg);
 
 	/* print to file */
     fprintf(stdout, "%s - %s line %i\n", _buff, __FILE__, __LINE__);
