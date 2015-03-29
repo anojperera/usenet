@@ -271,7 +271,7 @@ size_t usenet_utils_count_blanks(const char* message)
 
 	while(message[_i] != '\0') {
 		if(message[_i] == USENET_BLANKSPACE_CHAR)
-			_blank_spc+++;
+			_blank_spc++;
 		_i++;
 	}
 
