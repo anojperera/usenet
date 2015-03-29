@@ -18,7 +18,15 @@
 /* struct to encapsulate server component */
 struct uclient
 {
-	sig_atomic_t _init_flg;										/* flag to indicate initialised struct */
+	volatile sig_atomic_t _init_flg;							/* flag to indicate initialised struct */
+
+	/*
+	 * This flag is set to send a pulse to the server.
+	 * If the server doesn't respond in the next two cycles,
+	 * the client shall quit.
+	 */
+	volatile sig_atomic_t _pulse_sent;
+	volatile sig_atomic_t _ini_wait_flg;						/* flag for the initial wait */
 	unsigned int _act_ix;										/* index for the action to be taken */
 
 	int _pulse_counter;											/* pulse counter */
@@ -51,16 +59,25 @@ volatile sig_atomic_t term_sig = 1;
 
 int main(int argc, char** argv)
 {
-
+	int _cnt = 0;
 	if(init_client(&client) == USENET_ERROR)
 		return USENET_ERROR;
 
 	signal(SIGINT, _signal_hanlder);
 	while(term_sig) {
-		if(client._init_flg)
+		if(client._init_flg ^ client._ini_wait_flg)
 			pulse_client(&client);
+
 		sleep(1);
+		if(!(_cnt++ % client._login.svr_wait_time) && _cnt != 1) {
+			client._ini_wait_flg ^= 1;
+			_cnt = 0;
+		}
 	}
+
+	/* stop the server */
+	stop_client(&client);
+	USENET_LOG_MESSAGE("client stopped");
 
 	USENET_LOG_MESSAGE("good bye");
     return 0;
@@ -86,8 +103,6 @@ int init_client(struct uclient* cli)
 	cli->_server_name = cli->_login.server_name;
 	cli->_server_port = cli->_login.server_port;
 
-
-
 	/* launch connection object as a server */
 	USENET_LOG_MESSAGE("initiating connection object..");
 	status = thcon_init(&cli->_connection, thcon_mode_client);
@@ -110,11 +125,13 @@ int init_client(struct uclient* cli)
 	/* start the server */
 	USENET_LOG_MESSAGE("connection initialised, starting service");
 	status = thcon_start(&cli->_connection);
+
 	if(status != 0) {
 		USENET_LOG_MESSAGE("server not started successfully");
 		return USENET_ERROR;
 	}
 
+	cli->_pulse_sent = 0;
 	cli->_init_flg = 0;
 	cli->_pulse_counter = 0;
 	cli->_act_ix = 0;
@@ -151,6 +168,9 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	usenet_message_init(&_msg);
 	memcpy(&_msg, data, sz);
 
+	/* we receive some thing therefore pulse flag is reset */
+	_client->_pulse_sent = USENET_PULSE_RESET;
+
 
 	/*
 	 * if a request instruction was sent, acknowledge
@@ -175,7 +195,7 @@ int pulse_client(struct uclient* cli)
 	cli->_pulse_counter = 0;
 
 	memset(&_msg, 0, sizeof(struct usenet_message));
-	_msg.ins = USENET_REQUEST_RESPONSE;
+	_msg.ins = USENET_REQUEST_PULSE;
 	sprintf(_msg.msg_body, "%s", "working");
 
 	/* get pointer to the connection object */
@@ -184,16 +204,24 @@ int pulse_client(struct uclient* cli)
 	USENET_LOG_MESSAGE("sending server pulse");
 	thcon_send_info(_con, (void*) &_msg, sizeof(struct usenet_message));
 
+	/*
+	 * Check if the server has responded to the previous.
+	 * If haven't raise signal to terminate.
+	 */
+	if(cli->_pulse_sent & USENET_PULSE_SENT) {
+		USENET_LOG_MESSAGE("no response from server, raising SIGINT");
+		raise(SIGINT);
+	}
+
+	cli->_ini_wait_flg = 0;
+	cli->_pulse_sent = USENET_PULSE_SENT;
 	return 0;
 }
 
 static void _signal_hanlder(int signal)
 {
 	USENET_LOG_MESSAGE("stopping client");
-	/* stop the server */
-	stop_client(&client);
 	term_sig = 0;
-	USENET_LOG_MESSAGE("client stopped");
 }
 
 /* Default reponse */
@@ -219,6 +247,13 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 		cli->_act_ix = 0;
 	}
 
+	if(msg->ins == USENET_REQUEST_PULSE) {
+		USENET_LOG_MESSAGE("server responded to pulse");
+
+		/* return here as we no loger need to process the message */
+		return USENET_SUCCESS;
+	}
+
 	switch(cli->_act_ix) {
 	case 0:
 		/* if the index is zero look for the messages request command */
@@ -233,6 +268,7 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 			USENET_LOG_MESSAGE_ARGS("json rpc request received, message body: %s", msg->msg_body);
 			_default_response(cli, msg);
 			cli->_act_ix++;
+
 			/* look for process */
 			_action_json(msg->msg_body);
 		}

@@ -69,6 +69,10 @@ int main(int argc, char** argv)
 	}
 
 	/* stop the server */
+	stop_server(&server);
+	USENET_LOG_MESSAGE("server stopped");
+
+	/* stop the server */
 	USENET_LOG_MESSAGE("good bye");
     return 0;
 }
@@ -170,7 +174,6 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 
 	memcpy(&_msg, data, sz);
 
-
 	USENET_LOG_MESSAGE("message received from client");
 	_msg_handler(_server, &_msg);
 
@@ -251,14 +254,12 @@ static int _initialise_contact(struct userver* svr)
 static void _signal_hanlder(int signal)
 {
 	USENET_LOG_MESSAGE("stopping server");
-	/* stop the server */
-	stop_server(&server);
 	term_sig = 0;
-	USENET_LOG_MESSAGE("server stopped");
 }
 
 static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 {
+
 	/* check if handshake is required */
 	switch(svr->_act_ix) {
 	case 0:
@@ -288,6 +289,11 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 		break;
 	}
 
+	/* echo back the message if its pulse */
+	if(msg->ins == USENET_REQUEST_PULSE) {
+		thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+		USENET_LOG_MESSAGE("sent client response");
+	}
 	return 0;
 }
 
