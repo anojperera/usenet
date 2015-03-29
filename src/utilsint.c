@@ -61,6 +61,7 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(nzburl);
 	USENET_GET_SETTING_STRING(mac_addr);
 	USENET_GET_SETTING_INT(scan_freq);
+	USENET_GET_SETTING_INT(svr_wait_time);
     return USENET_SUCCESS;
 }
 
@@ -257,4 +258,28 @@ pid_t usenet_find_process(const char* pname)
 	closedir(_proc_dir);
 
 	return _lspid;
+}
+
+
+size_t usenet_utils_count_blanks(const char* message)
+{
+	size_t _blank_spc = 0;
+	int _i = 0;
+
+	if(message == NULL)
+		return _blank_spc;
+
+	while(message[_i] != '\0') {
+		if(message[_i] == USENET_BLANKSPACE_CHAR)
+			_blank_spc+++;
+		_i++;
+	}
+
+	/*
+	 * Return full length of the string if number of
+	 * no blank spaces are present.
+	 *
+	 * This needs to be refined.
+	 */
+	return _blank_spc == 0 ? _i : _blank_spc;
 }
