@@ -10,6 +10,7 @@
 #include <gqueue.h>
 #include "usenet.h"
 #include "thcon.h"
+#include "jsmn.h"
 
 #define USENET_CLIENT_MSG_SZ 256
 #define USENET_CLIENT_MSG_PULSE_GAP 5
@@ -282,10 +283,65 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 
 static int _action_json(const char* json_msg)
 {
+	int _ret = USENET_SUCCESS, _i = 0, _num_tok = 0;
 	pid_t _nzbget_pid = -1;
 	pid_t _f_pid = -1;
+	jsmntok_t* _json_tok = NULL, *_json_args = NULL;
+
+	struct usenet_str_arr _str_arr = {0};
+
+	/* parse the json message */
+	while(1) {
+		if(usjson_parse_message(json_msg, &_json_tok, &_num_tok) == USENET_ERROR) {
+
+			USENET_LOG_MESSAGE("unable to parse json message");
+
+			_json_tok = NULL;
+			_ret = USENET_ERROR;
+			break;
+		}
+		else {
+			USENET_LOG_MESSAGE("JSON parser succeeded");
+		}
+
+		/* get token */
+		if(usjson_get_token(json_msg, _json_tok, _num_tok, "args", NULL, &_json_args) == USENET_ERROR) {
+			USENET_LOG_MESSAGE("unable to get token");
+			_ret = USENET_ERROR;
+			break;
+		}
+
+		/* get the array into a buffer */
+		if(usjson_get_token_arr_as_str(json_msg, _json_args, &_str_arr) == USENET_ERROR) {
+			USENET_LOG_MESSAGE("unable to get the arg array for the rpc call");
+			_ret = USENET_ERROR;
+			break;
+		}
+
+		break;
+	}
+
+	/* clean the memory taken by token */
+	if(_json_tok != NULL)
+		free(_json_tok);
+
+	/* free the arg array */
+	for(_i = 0; _i < _str_arr._sz; _i++) {
+		if(_str_arr._arr[_i]) {
+			free(_str_arr._arr[_i]);
+			_str_arr._arr[_i] = NULL;
+		}
+	}
+
+	if(_str_arr._arr != NULL)
+		free(_str_arr._arr);
+	_str_arr._arr = NULL;
+
+	if(_ret == USENET_ERROR)
+		return _ret;
 
 	_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
+
 	if(_nzbget_pid < 0) {
 		USENET_LOG_MESSAGE("process not initialised, spawning nzbget");
 
@@ -304,7 +360,5 @@ static int _action_json(const char* json_msg)
 	else
 		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
 
-
-
-	return USENET_SUCCESS;
+	return _ret;
 }
