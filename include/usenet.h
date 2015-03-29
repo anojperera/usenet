@@ -17,6 +17,8 @@
 #include <string.h>
 #include <stdarg.h>
 
+#include "jsmn.h"
+
 #define USENET_SUCCESS 0
 #define USENET_ERROR -1
 #define USENET_ARG_ERROR -2
@@ -30,6 +32,8 @@
 
 #define USENET_PULSE_SENT 1
 #define USENET_PULSE_RESET 0
+
+#define USENET_BLANKSPACE_CHAR 32
 
 struct gapi_login
 {
@@ -69,6 +73,18 @@ int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url);			/* sea
 int usenet_read_file(const char* path, char** buff, size_t* sz);					/* Read contents of a file pointed by file path */
 
 pid_t usenet_find_process(const char* pname);									/* find process id */
+
+/*
+ * Count the number of blank spaces in a given string,
+ * the string is expected to be NULL terminated.
+ */
+size_t usenet_utils_count_blanks(const char* message);
+
+/*
+ * JSON Parser helper methods
+ */
+int usjson_parse_message(const char* msg, jsmntok_t** tok, int* num);
+int usjson_get_token(jsmntok_t* tok, size_t num_tokens, const char* key, char** msg, size_t* sz, jsmntok_t* obj);
 
 #define USENET_REQUEST_RESPONSE 0x00
 #define USENET_REQUEST_RESPONSE_PENDING 0x01
