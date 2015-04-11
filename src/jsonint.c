@@ -144,6 +144,11 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 		str_arr->_arr[_i] = (char*) malloc((_sz + 1) * sizeof(char));
 		memset(str_arr->_arr[_i], 0, _sz+1);
 		strncpy(str_arr->_arr[_i], msg + tok->start, _sz);
+
+		/* remove other characters */
+		USENET_LOG_MESSAGE("cleaning illegal characters in array");
+		usenet_utils_remove_chars(str_arr->_arr[_i], _sz);
+		USENET_LOG_MESSAGE_ARGS("cleaned array: %s", str_arr->_arr[_i]);
 	}
 
 	str_arr->_sz = tok->size;

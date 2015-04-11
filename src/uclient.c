@@ -185,6 +185,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 int pulse_client(struct uclient* cli)
 {
 	struct usenet_message _msg;
+	thcon* _con = NULL;
 
 	/*
 	 * We only send a pulse every USENET_CLIENT_MSG_PULSE_GAP
@@ -200,7 +201,7 @@ int pulse_client(struct uclient* cli)
 	sprintf(_msg.msg_body, "%s", "working");
 
 	/* get pointer to the connection object */
-	thcon* _con = &cli->_connection;
+	_con = &cli->_connection;
 
 	USENET_LOG_MESSAGE("sending server pulse");
 	thcon_send_info(_con, (void*) &_msg, sizeof(struct usenet_message));
@@ -211,7 +212,7 @@ int pulse_client(struct uclient* cli)
 	 */
 	if(cli->_pulse_sent & USENET_PULSE_SENT) {
 		USENET_LOG_MESSAGE("no response from server, raising SIGINT");
-		raise(SIGINT);
+		/* raise(SIGINT); */
 	}
 
 	cli->_ini_wait_flg = 0;
