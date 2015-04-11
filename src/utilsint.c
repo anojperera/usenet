@@ -19,6 +19,13 @@
 #define USENET_SETTINGS_FILE "../config/usenet.cfg"
 #define USENET_PROC_PATH "/proc"
 
+#define USENET_NEW_LINE_CHAR 10
+#define USENET_ARRAY_CHAR_BEGIN 91
+#define USENET_BACKSLASH_CHAR 92
+#define USENET_ARRAY_CHAR_END 93
+#define USENET_SPACE_CHAR 32
+#define USENET_DOUBLEQ_CHAR 34
+
 #define USENET_GET_SETTING_STRING(name)								\
     if((_setting = config_lookup(&login->_config, #name)) != NULL)	\
 		(login->name)  = config_setting_get_string(_setting)
@@ -65,7 +72,7 @@ int usenet_utils_load_config(struct gapi_login* login)
     return USENET_SUCCESS;
 }
 
-int usenet_destroy_config(struct gapi_login* login)
+int usenet_utils_destroy_config(struct gapi_login* login)
 {
 	config_destroy(&login->_config);
 
@@ -260,7 +267,6 @@ pid_t usenet_find_process(const char* pname)
 	return _lspid;
 }
 
-
 size_t usenet_utils_count_blanks(const char* message)
 {
 	size_t _blank_spc = 0;
@@ -282,4 +288,110 @@ size_t usenet_utils_count_blanks(const char* message)
 	 * This needs to be refined.
 	 */
 	return _blank_spc == 0 ? _i : _blank_spc;
+}
+
+/* Remove any parenthesis  new lines etc */
+int usenet_utils_remove_chars(char* str, size_t len)
+{
+	int _i = 0, _j = 0;
+	char* _c_pos = NULL, *_end_pos = NULL;
+	char** _i_pos = NULL, **_pos = NULL, **_ins_pos = NULL;
+	size_t _byte_loss_cnt = 0;
+
+	/* create an array of char* to store the positions */
+	_i_pos = (char**) calloc(sizeof(char*), len);
+
+	/* set the end position of the string */
+	_end_pos = str + sizeof(char)*len;
+
+	/* initialise all to NULL and record the positions */
+	for(_i = 0; _i < len; _i++) {
+		_i_pos[_i] = NULL;
+
+		_c_pos = str + _i*sizeof(char);
+
+		/*
+		 * Check for characters which are not allowed and
+		 * record their positions
+		 */
+		switch(*_c_pos) {
+		case USENET_SPACE_CHAR:
+			/*
+			 * space character is only checked at leading and
+			 * trailing ends.
+			 */
+			if((_i == 0 || _i == len - 1) && _i_pos[_j] == NULL) {
+				_i_pos[_j] = _c_pos;
+
+				/* increment loss byte count */
+				_byte_loss_cnt++;
+			}
+			break;
+		case USENET_NEW_LINE_CHAR:
+		case USENET_ARRAY_CHAR_BEGIN:
+		case USENET_ARRAY_CHAR_END:
+		case USENET_DOUBLEQ_CHAR:
+		case USENET_BACKSLASH_CHAR:
+
+			/* increment loss byte count */
+			_byte_loss_cnt++;
+
+			/*
+			 * we only set the pointer on non continuous
+			 * invalid characters. with the exception when
+			 * _j = 0 at the start of the check.
+			 */
+			if(_i_pos[_j] != NULL)
+				break;
+
+			_i_pos[_j] = _c_pos;
+			break;
+		default:
+			if(_i_pos[_j] != NULL) {
+				_i_pos[++_j] = _c_pos;
+				_j++;
+			}
+		}
+	}
+
+	/* go through the recorded position and adjust the new array */
+
+	for(_i = 0, _pos = _i_pos;
+		_i < _j+1;
+		_i++, _pos++) {
+
+		/*
+		 * First we increment the array position the next, so that a
+		 * difference in byte count can be obtainted between what the
+		 * current element points to and the next.
+		 */
+		_ins_pos = _pos;
+		_pos++;
+
+		/*
+		 * If the element is pointing to a NULL pointer, that means we
+		 * no further adjustment and we are probably end of the line.
+		 * Therefore we add a NULL pointer until the end and break.
+		 */
+		if(*_pos == NULL) {
+			memset(*_ins_pos, 0, _end_pos - *_ins_pos);
+			break;
+		}
+
+		if(*_pos - _i_pos[_i] <= 0)
+			continue;
+
+		/*
+		 * Next element of the array points to the last continuous illegal character
+		 * therefore we add another byte to what it points to get the next pointer with
+		 * valid character.
+		 */
+		memmove(*_ins_pos, *_pos, _end_pos - *_pos);
+
+	}
+
+	free(_i_pos);
+	_i_pos = NULL;
+
+	return USENET_SUCCESS;
 }
