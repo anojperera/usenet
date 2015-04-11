@@ -71,7 +71,9 @@ struct usenet_str_arr
 
 
 int usenet_utils_load_config(struct gapi_login* login);
-int usenet_destroy_config(struct gapi_login* login);
+int usenet_utils_destroy_config(struct gapi_login* login);
+
+#define usenet_destroy_config usenet_utils_destroy_config
 
 /* message struc handler methods */
 int usenet_message_init(struct usenet_message* msg);								/* Initialise the message struct */
@@ -87,6 +89,11 @@ pid_t usenet_find_process(const char* pname);									/* find process id */
  * the string is expected to be NULL terminated.
  */
 size_t usenet_utils_count_blanks(const char* message);
+
+/*
+ * Utility method for removing unwanted characters.
+ */
+int usenet_utils_remove_chars(char* str, size_t len);
 
 /*
  * JSON Parser helper methods
