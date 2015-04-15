@@ -29,6 +29,9 @@ struct uclient
 	volatile sig_atomic_t _pulse_sent;
 	volatile sig_atomic_t _ini_wait_flg;						/* flag for the initial wait */
 	unsigned int _act_ix;										/* index for the action to be taken */
+	volatile unsigned int _probe_nzb_flg;						/* flag to indicate probe nzbget */
+
+	pid_t _child_pid;											/* child process ID */
 
 	int _pulse_counter;											/* pulse counter */
 	const char* _server_name;									/* server name */
@@ -44,7 +47,11 @@ static int _data_receive_callback(void* self, void* data, size_t sz);
 static void _signal_hanlder(int signal);
 static inline __attribute__ ((always_inline)) int _default_response(struct uclient* client, struct usenet_message* msg);
 static int _msg_handler(struct uclient* cli, struct usenet_message* msg);
-static int _action_json(const char* json_msg);
+static int _action_json(struct uclient* cli, const char* json_msg);
+static int _echo_daemon_check_to_parent(struct uclient* cli);
+static int _echo_update_list(struct uclient* cli);
+static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg);
+static int _terminate_client(struct uclient* cli);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -136,6 +143,8 @@ int init_client(struct uclient* cli)
 	cli->_init_flg = 0;
 	cli->_pulse_counter = 0;
 	cli->_act_ix = 0;
+	cli->_probe_nzb_flg = 0;
+	cli->_child_pid = -1;
 
 	/* initialise thread */
 
@@ -193,12 +202,19 @@ int pulse_client(struct uclient* cli)
 	if(++cli->_pulse_counter < USENET_CLIENT_MSG_PULSE_GAP)
 		return 0;
 
+	/* terminate the child process if running */
+	_terminate_client(cli);
+
+	/* if probe flag was set, update server to broadcast */
+	if(cli->_probe_nzb_flg)
+		_echo_update_list(cli);
+
 	/* reset counter back to 0 to start timer again */
 	cli->_pulse_counter = 0;
 
 	memset(&_msg, 0, sizeof(struct usenet_message));
 	_msg.ins = USENET_REQUEST_PULSE;
-	sprintf(_msg.msg_body, "%s", "working");
+	sprintf(_msg.msg_body, "%s", "alive");
 
 	/* get pointer to the connection object */
 	_con = &cli->_connection;
@@ -272,27 +288,28 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 			cli->_act_ix++;
 
 			/* look for process */
-			_action_json(msg->msg_body);
+			_action_json(cli, msg->msg_body);
 		}
 		break;
 	default:
-		USENET_LOG_MESSAGE("unkown request received");
+		USENET_LOG_MESSAGE("unkown request received, handling message..");
+		_handle_unknown_message(cli, msg);
 	}
 
 	return 0;
 }
 
-static int _action_json(const char* json_msg)
+static int _action_json(struct uclient* cli, const char* json_msg)
 {
 	int _ret = USENET_SUCCESS, _i = 0, _num_tok = 0;
 	pid_t _nzbget_pid = -1;
-	pid_t _f_pid = -1;
+
 	jsmntok_t* _json_tok = NULL, *_json_args = NULL;
 
 	struct usenet_str_arr _str_arr = {0};
 
 	/* parse the json message */
-	while(1) {
+	do {
 		if(usjson_parse_message(json_msg, &_json_tok, &_num_tok) == USENET_ERROR) {
 
 			USENET_LOG_MESSAGE("unable to parse json message");
@@ -320,15 +337,16 @@ static int _action_json(const char* json_msg)
 		}
 
 		break;
-	}
+	} while(0);
 
 	/* clean the memory taken by token */
 	if(_json_tok != NULL)
 		free(_json_tok);
 
-	/* free the arg array */
+	/* get the NZBs and free the array */
 	for(_i = 0; _i < _str_arr._sz; _i++) {
 		if(_str_arr._arr[_i]) {
+			usenet_nzb_search_and_get(_str_arr._arr[_i], NULL);
 			free(_str_arr._arr[_i]);
 			_str_arr._arr[_i] = NULL;
 		}
@@ -347,19 +365,112 @@ static int _action_json(const char* json_msg)
 		USENET_LOG_MESSAGE("process not initialised, spawning nzbget");
 
 		/* fork the process here, call system to spawn nzbget */
-		_f_pid = fork();
-		if(_f_pid == 0) {
+		cli->_child_pid = fork();
+		if(cli->_child_pid == 0) {
 
 			/* this is the child process therefore spawn nzbget */
 			USENET_LOG_MESSAGE("starting nzbget as a deamon");
 			system("nzbget -D");
 
+			_echo_daemon_check_to_parent(cli);
+			_echo_update_list(cli);
+
 			/* raise signal to terminate self */
+			USENET_LOG_MESSAGE("stopping client");
+			stop_client(&client);
 			raise(SIGINT);
+			exit(0);
 		}
 	}
-	else
+	else {
 		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
+		_echo_update_list(cli);
+	}
 
 	return _ret;
+}
+
+static int _echo_daemon_check_to_parent(struct uclient* cli)
+{
+	struct usenet_message _msg;
+
+	_msg.ins = USENET_REQUEST_BORADCAST;
+	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}", USENET_JSON_FN_HEADER, USENET_JSON_FN_1, USENET_JSON_ARG_HEADER);
+
+	USENET_LOG_MESSAGE("broadcasting message to parent to indicate it I am complete");
+
+	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
+
+	return USENET_SUCCESS;
+}
+
+
+static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg)
+{
+	int _num = 0;
+	jsmntok_t* _tok = NULL, *_rpc_tok = NULL;;
+	char* _rpc_val = NULL;
+
+	int _ret = USENET_SUCCESS;
+
+	/* parse the message */
+	USENET_LOG_MESSAGE("parsing unknown message");
+
+	if(usjson_parse_message(msg->msg_body, &_tok, &_num) != USENET_SUCCESS)
+		return USENET_ERROR;
+
+	/* get token */
+	USENET_LOG_MESSAGE("inspecting remote procedure call");
+	if(usjson_get_token(msg->msg_body, _tok, _num, USENET_JSON_FN_HEADER, &_rpc_val, &_rpc_tok) != USENET_SUCCESS) {
+		_ret = USENET_ERROR;
+		USENET_LOG_MESSAGE("json parser error");
+		goto clean_up;
+	}
+
+	/* compare the function call */
+	if(strcmp(_rpc_val, USENET_JSON_FN_1) == 0) {
+		USENET_LOG_MESSAGE("echo message received from child process, nzbget is launched successfully");
+		cli->_probe_nzb_flg = 1;
+	}
+	else if(strcmp(_rpc_val, USENET_JSON_FN_2) == 0) {
+		USENET_LOG_MESSAGE("echo message received to update the nzbget list");
+		usenet_nzb_scan();
+	}
+
+	USENET_LOG_MESSAGE("cleaning up the allocated memory");
+clean_up:
+	/* free allocated resources */
+	if(_tok)
+		free(_tok);
+
+	if(_rpc_val)
+		free(_rpc_val);
+
+	return _ret;
+}
+
+
+static int _terminate_client(struct uclient* cli)
+{
+	if(cli->_child_pid > 0) {
+		USENET_LOG_MESSAGE_ARGS("terminating child process: %i", cli->_child_pid);
+		kill(cli->_child_pid, SIGKILL);
+		cli->_child_pid = -1;
+	}
+
+	return USENET_SUCCESS;
+}
+
+static int _echo_update_list(struct uclient* cli)
+{
+	struct usenet_message _msg;
+
+	_msg.ins = USENET_REQUEST_BORADCAST;
+	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}", USENET_JSON_FN_HEADER, USENET_JSON_FN_2, USENET_JSON_ARG_HEADER);
+
+	USENET_LOG_MESSAGE("broadcasting message update list");
+
+	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
+
+	return USENET_SUCCESS;
 }

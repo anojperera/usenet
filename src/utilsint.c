@@ -374,7 +374,7 @@ int usenet_utils_remove_chars(char* str, size_t len)
 		 * Therefore we add a NULL pointer until the end and break.
 		 */
 		if(*_pos == NULL) {
-			memset(*_ins_pos, 0, _end_pos - *_ins_pos);
+			memset(*_ins_pos - 2*sizeof(char), 0, _end_pos - *_ins_pos);
 			break;
 		}
 

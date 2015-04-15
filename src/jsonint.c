@@ -98,9 +98,9 @@ int usjson_get_token(const char* msg, jsmntok_t* tok, size_t num_tokens, const c
 	}
 	else if(_f_flg) {
 		USENET_LOG_MESSAGE("storing the json key in a temporary variable");
+		*value = (char*) malloc((*obj)->end - (*obj)->start + 1);
+		strncpy(*value, msg + (*obj)->start, (*obj)->end - (*obj)->start);
 		_t = *value;
-		_t = (char*) malloc((*obj)->end - (*obj)->start + 1);
-		strncpy(_t, msg + (*obj)->start, (*obj)->end - (*obj)->start);
 		_t += (*obj)->end - (*obj)->start;
 		*_t = '\0';
 

@@ -55,14 +55,6 @@
 #define USENET_URL_BEGIN "http://"
 #define USENET_DEFAULT_SAVE_PATH "/home/pyrus/Downloads/nzb/"
 
-#define DISPLAY_ITEM(obj)												\
-    fprintf(stdout, "%s\n", (obj)->_alias);								\
-    fprintf(stdout, "%s\n", (obj)->_link);								\
-    fprintf(stdout, "%u MB\n", (obj)->_sz);								\
-    fprintf(stdout, "%s\n", (obj)->_pub_date);							\
-    fprintf(stdout, "Days Since Published: %i\n", (obj)->_time_since_today); \
-    fprintf(stdout, "========================================\n");		\
-    fprintf(stdout, "\n")
 
 static const char* USENET_URL = "http://nzbclub.com/nzbfeeds.aspx?q=";
 
@@ -89,12 +81,8 @@ struct nzb_item
 
 char use_search_key[USENET_SEARCH_BUFF_SZ];
 
-extern int update_list(void);
-
-
 static int _exec_search(const char* search_key, struct search_content* content);
 static int _parse_document(const char* search, xmlDocPtr* doc, const struct search_content* content, struct nzb_item** items, unsigned int* sz);
-static int _display_items(struct nzb_item* items, unsigned int count);
 static unsigned int _get_size(const char* description);
 static int _get_usenet_item(const struct nzb_item* items, unsigned int sz, const struct nzb_item** sel_item);
 
@@ -137,8 +125,7 @@ int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url)
 	_download._search_key = use_search_key;
 
 
-    if(use_search_key[0] == 0)
-	{
+    if(use_search_key[0] == 0) {
 	    USENET_LOG_MESSAGE("No search key defined, bailing out");
 	    return USENET_ERROR;
 	}
@@ -146,32 +133,28 @@ int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url)
     USENET_LOG_MESSAGE("contacting usenet search");
     _stat = _exec_search(use_search_key, &_content);
 
-    if(!_stat)
-	{
+    if(!_stat) {
 	    xmlInitParser();
-	    if(!_parse_document(use_search_key, &_doc, &_content, &_items, &_entry_count))
-		{
+	    if(!_parse_document(use_search_key, &_doc, &_content, &_items, &_entry_count)) {
 		    USENET_LOG_MESSAGE_ARGS("Number of results: %i", _entry_count);
-		    _display_items(_items, _entry_count);
 
 		    /* display the most appropriate item */
 		    _get_usenet_item(_items, _entry_count, &_sel_item);
 
-		    if(_sel_item != NULL)
-			{
-			    fprintf(stdout, "\n\nSelected Item: \n");
-			    DISPLAY_ITEM(_sel_item);
+		    if(_sel_item != NULL) {
+				USENET_LOG_MESSAGE_ARGS("nzbget selected item: %s", _sel_item->_description);
 			    _download_content(_sel_item->_link, &_download, _write_file_callback);
+			}
+			else {
+				USENET_LOG_MESSAGE("unable to get the search item");
 			}
 		}
 	}
 
 
     /* free memory */
-    if(_items != NULL)
-	{
-	    for(_i=0; _i < _entry_count; _i++)
-		{
+    if(_items != NULL) {
+	    for(_i=0; _i < _entry_count; _i++) {
 		    if(_items[_i]._pub_date)
 				free(_items[_i]._pub_date);
 
@@ -189,9 +172,6 @@ int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url)
 
     if(_doc != NULL)
 		xmlFreeDoc(_doc);
-
-	/* update nzbget's list */
-    update_list();
 
     /* Shutdown libxml */
     xmlCleanupParser();
@@ -253,7 +233,7 @@ static int _exec_search(const char* search_key, struct search_content* content)
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1L);
 
     /* perform the request, res will return the return code */
-    USENET_LOG_MESSAGE("executing search...");
+    USENET_LOG_MESSAGE_ARGS("executing search on %s...", _url);
     _res = curl_easy_perform(_curl);
     if(_res != CURLE_OK)
 	{
@@ -463,30 +443,6 @@ static void _queue_delete_helper(void* item)
     return;
 }
 
-
-static int _display_items(struct nzb_item* items, unsigned int count)
-{
-    struct nzb_item const *itr = NULL;
-    unsigned int _i = 0;
-    /* check for arguments */
-    if(items == NULL || count <= 0)
-	{
-	    USENET_LOG_MESSAGE("empty list");
-	    return -1;
-	}
-
-    itr = items;
-    for(; _i<count; _i++)
-	{
-	    DISPLAY_ITEM(itr);
-	    itr++;
-	}
-
-    return 0;
-
-}
-
-
 /* gets the size in mega bytes */
 static unsigned int _get_size(const char* description)
 {
@@ -578,7 +534,7 @@ static int _get_usenet_item(const struct nzb_item* items, unsigned int sz, const
 		{
 		    for(_j=_i+1; _j<_max; _j++)
 			{
-			    if(items[_i]._time_since_today <  items[_j]._time_since_today)
+			    if(items[_i]._time_since_today <=  items[_j]._time_since_today)
 				{
 				    *sel_item = &items[_i];
 				    break;
@@ -605,14 +561,14 @@ static int _download_content(char* url, struct search_content* content, int (*ca
     content->_size = 0;
 
 
-    fprintf(stdout, "initialising curl easy...\n");
+    USENET_LOG_MESSAGE("initialising curl easy...");
     curl_global_init(CURL_GLOBAL_ALL);
 
     /* initialise curl */
     _curl = curl_easy_init();
     if(_curl == NULL)
 	{
-	    fprintf(stderr, "Unable to initialise CURL\n");
+		USENET_LOG_MESSAGE("Unable to initialise CURL");
 	    curl_global_cleanup();
 	    return -1;
 	}
@@ -624,7 +580,7 @@ static int _download_content(char* url, struct search_content* content, int (*ca
 			url[_i] = USENET_USCORE_CHAR;
 	}
 
-    fprintf(stdout, "setting curl parameters\n");
+    USENET_LOG_MESSAGE("setting curl parameters");
     curl_easy_setopt(_curl, CURLOPT_URL, url);
 
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, _write_content_callback);
@@ -662,7 +618,7 @@ static int _download_content(char* url, struct search_content* content, int (*ca
 
 static int _write_file_callback(CURLcode result, void* content)
 {
-    char _file_name[USENET_SEARCH_BUFF_SZ];
+    char _file_name[USENET_SEARCH_BUFF_SZ] = {0};
     struct search_content* _content;
     int _fd = 0;
     if(result != CURLE_OK || content == NULL)
@@ -680,22 +636,23 @@ static int _write_file_callback(CURLcode result, void* content)
 	    strncat(_file_name, USENET_FILE_EXT, USENET_FILE_EXT_SZ);
 	}
 
-    USENET_LOG_MESSAGE("Opening file for writing");
+    USENET_LOG_MESSAGE_ARGS("opening file, %s for writing", _file_name);
     _fd = open(_file_name, O_WRONLY | O_CREAT);
     fchmod(_fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
     if(_fd == -1)
 	{
 	    goto write_file_free;
+		USENET_LOG_MESSAGE("unable to open the file");
 	    perror("open() error");
 	}
 
     write(_fd, _content->_memory, _content->_size);
     close(_fd);
-    USENET_LOG_MESSAGE("File written successfully");
+    USENET_LOG_MESSAGE("file written successfully");
 
 write_file_free:
     if(_content && _content->_size > 0)
 		free(_content->_memory);
-    return 0;
+    return USENET_SUCCESS;
 }

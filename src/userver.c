@@ -14,8 +14,8 @@
 #define USENET_SERVER_MSG_SZ 256
 #define USENET_SERVER_JSON_SZ 151
 
-#define USENET_SERVER_JSON_FN_HEADER "rpc"
-#define USENET_SERVER_JSON_ARG_HEADER "args"
+#define USENET_SERVER_JSON_FN_HEADER USENET_JSON_FN_HEADER
+#define USENET_SERVER_JSON_ARG_HEADER USENET_JSON_ARG_HEADER
 #define USENET_SERVER_JSON_FN_NAME "usenet_nzb_search_and_get"
 #define USENET_SERVER_JSON_PATH "../resource/req.json"
 
@@ -289,11 +289,18 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 		break;
 	}
 
-	/* echo back the message if its pulse */
-	if(msg->ins == USENET_REQUEST_PULSE) {
+	if(msg->ins == USENET_REQUEST_PULSE)
+		USENET_LOG_MESSAGE("responding to client's pulse");
+
+	if(msg->ins == USENET_REQUEST_BORADCAST)
+		USENET_LOG_MESSAGE("responding to client's broadcast request");
+
+	/* echo back the message if its pulse or broadcast */
+	if(msg->ins == USENET_REQUEST_PULSE || msg->ins == USENET_REQUEST_BORADCAST) {
 		thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
 		USENET_LOG_MESSAGE("sent client response");
 	}
+
 	return 0;
 }
 
@@ -321,8 +328,6 @@ static int _msg_get_nzb(const char* nzb, const char* msg_body)
 		USENET_LOG_MESSAGE("copying request json to message body");
 		strncpy((char*) msg_body, _buff, USENET_SERVER_JSON_SZ-1);
 		_buff[USENET_SERVER_JSON_SZ-1] = '\0';
-
-
 	}
 	if(_buff != NULL)
 		free(_buff);
