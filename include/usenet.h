@@ -29,11 +29,18 @@
 #define USENET_LOG_MESSAGE_SZ 256
 #define USENET_PROC_FILE_BUFF_SZ 512
 #define USENET_PROC_NAME_BUFF_SZ 256
+#define USENET_NZB_FILESTAT 2032
 
 #define USENET_PULSE_SENT 1
 #define USENET_PULSE_RESET 0
 
 #define USENET_BLANKSPACE_CHAR 32
+
+#define USENET_JSON_FN_HEADER "rpc"
+#define USENET_JSON_ARG_HEADER "args"
+
+#define USENET_JSON_FN_1 "usenet_complete"
+#define USENET_JSON_FN_2 "usenet_update_list"
 
 struct gapi_login
 {
@@ -69,6 +76,26 @@ struct usenet_str_arr
 	size_t _sz;
 };
 
+/* struct for getting the nzb file state */
+struct usenet_nzb_filellist
+{
+	int _id;
+	int _nzb_id;
+	char* _nzb_file_name;
+	char* _subject;
+	char* _nzb_name;
+	char* _dest_dir;
+	int file_size_lo;
+	int file_size_hi;
+	int remaining_size_lo;
+	int remaining_size_hi;
+	int paused;
+	int posttime;
+	int priority;
+	int active_downloadsint;
+};
+
+
 
 int usenet_utils_load_config(struct gapi_login* login);
 int usenet_utils_destroy_config(struct gapi_login* login);
@@ -102,6 +129,12 @@ int usjson_parse_message(const char* msg, jsmntok_t** tok, int* num);
 int usjson_get_token(const char* msg, jsmntok_t* tok, size_t num_tokens, const char* key, char** value, jsmntok_t** obj);
 int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_str_arr* str_arr);
 
+/*
+ * nzbget methods
+ */
+int usenet_update_nzb_list(void);
+int usenet_nzb_scan(void);
+
 #define USENET_REQUEST_RESPONSE 0x00
 #define USENET_REQUEST_RESPONSE_PENDING 0x01
 #define USENET_REQUEST_RESET 0x02
@@ -109,6 +142,7 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 #define USENET_REQUEST_DOWNLOAD 0x04
 #define USENET_REQUEST_FUNCTION 0x05
 #define USENET_REQUEST_PULSE 0x06
+#define USENET_REQUEST_BORADCAST 0x07
 
 /* helper method for logging */
 static inline __attribute__ ((always_inline)) void _usenet_log_message(const char* msg)
