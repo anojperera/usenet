@@ -10,8 +10,11 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <math.h>
+#include <time.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <dirent.h>
+
 
 #include <libconfig.h>
 #include "usenet.h"
@@ -19,19 +22,18 @@
 #define USENET_SETTINGS_FILE "../config/usenet.cfg"
 #define USENET_PROC_PATH "/proc"
 
-#define USENET_NEW_LINE_CHAR 10
-#define USENET_ARRAY_CHAR_BEGIN 91
-#define USENET_BACKSLASH_CHAR 92
-#define USENET_ARRAY_CHAR_END 93
-#define USENET_SPACE_CHAR 32
-#define USENET_DOUBLEQ_CHAR 34
-
 #define USENET_GET_SETTING_STRING(name)								\
     if((_setting = config_lookup(&login->_config, #name)) != NULL)	\
 		(login->name)  = config_setting_get_string(_setting)
 #define USENET_GET_SETTING_INT(name)								\
     if((_setting = config_lookup(&login->_config, #name)) != NULL)	\
 		(login->name)  = config_setting_get_int(_setting)
+
+#define USENET_CHECK_FILE_EXT(fname)									\
+	(((strstr((fname), "mkv") || strstr((fname), "avi") || strstr((fname), "wmv")) && !strstr((fname), "sample"))? 1 : 0)
+
+static inline __attribute__ ((always_inline)) const char* _usenet_utils_get_ext(const char* fname);
+static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list, const char* file_path);
 
 /* load configuration settings from file */
 int usenet_utils_load_config(struct gapi_login* login)
@@ -69,6 +71,7 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(mac_addr);
 	USENET_GET_SETTING_INT(scan_freq);
 	USENET_GET_SETTING_INT(svr_wait_time);
+	USENET_GET_SETTING_INT(nzb_fsize_threshold);
     return USENET_SUCCESS;
 }
 
@@ -394,4 +397,228 @@ int usenet_utils_remove_chars(char* str, size_t len)
 	_i_pos = NULL;
 
 	return USENET_SUCCESS;
+}
+
+/*
+ * Get the time difference in creation file creation time and now
+ */
+int usenet_utils_time_diff(const char* file)
+{
+	time_t _now;
+	struct stat _buf;
+
+	if(file == NULL)
+		return USENET_ERROR;
+
+
+	/* get file stat */
+	if(stat(file, &_buf)) {
+		USENET_LOG_MESSAGE_ARGS("unable to get stat file, errorno: %i", errno);
+		return USENET_ERROR;
+	}
+
+	/* check if the file is a regular file */
+	if(!S_ISREG(_buf.st_mode)) {
+		USENET_LOG_MESSAGE("file is not a regular file");
+		return USENET_ERROR;
+	}
+
+	time(&_now);
+	return (int) difftime(_now, _buf.st_mtime);
+}
+
+/*
+ * Replace space character with an underscore
+ */
+int usenet_utils_stdardise_file_name(char* file_name)
+{
+	int _i = 0;
+
+	if(file_name == NULL)
+		return USENET_ERROR;
+
+	for(_i = 0; _i < strlen(file_name); _i++) {
+		if(file_name[_i] == USENET_SPACE_CHAR)
+			file_name[_i] = USENET_USCORE_CHAR;
+	}
+
+	return USENET_SUCCESS;
+}
+
+/*
+ * Create std file name from nzb file name
+ */
+int usenet_utils_append_std_fname(struct usenet_nzb_filellist* list)
+{
+	size_t _sz = 0;
+
+	if(list->_nzb_name == NULL || list->_u_std_fname != NULL)
+		return USENET_ERROR;
+
+	/* get the size of the file name */
+	_sz = strlen(list->_nzb_name);
+
+	/* create memory to field and copy */
+	list->_u_std_fname = (char*) malloc((_sz + 1) * sizeof(char));
+	strncpy(list->_u_std_fname, list->_nzb_name, _sz);
+	list->_u_std_fname[_sz] = '\0';
+
+	return usenet_utils_stdardise_file_name(list->_u_std_fname);
+}
+
+int usenet_utils_rename_file(struct usenet_nzb_filellist* list, int threshold)
+{
+	size_t _nfname_sz = 0;
+	char* _nfname = NULL;										/* full path of the file to be changed */
+
+	int _ret = USENET_SUCCESS;
+	DIR* _nzb_dir = NULL;
+	struct dirent* _dir_ent = NULL;
+
+	struct stat _sbuf = {0};
+
+	/* open the download directory */
+	_nzb_dir = opendir(list->_dest_dir);
+	if(_nzb_dir == NULL) {
+		USENET_LOG_MESSAGE_ARGS("unable to open the directory: %s, exiting rename process.", list->_dest_dir);
+
+		_ret = USENET_ERROR;
+		return _ret;
+	}
+
+	while((_dir_ent = readdir(_nzb_dir))) {
+
+		/* continue if not a regular file */
+		if(_dir_ent->d_type != DT_REG)
+			continue;
+
+		/* construct full file name */
+		usenet_utils_cons_new_fname(list->_dest_dir, _dir_ent->d_name, &_nfname, &_nfname_sz);
+
+		/* get stats of the new file name */
+		if(!stat(_nfname, &_sbuf) &&
+		   USENET_CHECK_FILE_EXT(_nfname)) {
+
+			/* break here and operate on the file */
+			break;
+		}
+
+		if(_nfname)
+			free(_nfname);
+
+		_nfname = NULL;
+	}
+
+	/* close the directory */
+	closedir(_nzb_dir);
+
+	if(_nfname) {
+
+		USENET_LOG_MESSAGE_ARGS("file found %s, with %dMB, list size %dMB", _nfname, USENET_CONV_MB(_sbuf.st_size), list->_file_size);
+		_ret = _usenet_utils_rename_helper(list, _nfname);
+
+		free(_nfname);
+	}
+
+	_nfname = NULL;
+
+	return _ret;
+}
+
+
+int usenet_utils_escape_blanks(char* fname, size_t sz)
+{
+	size_t _end_off = 0;
+	char* _pos = NULL;
+	char* _end_pos = NULL;
+
+	/* get end position */
+	_end_off = strlen(fname);
+	_end_pos = fname + _end_off + 1;
+
+	/* iterate while charater is NOT null */
+	while(*fname != '\0') {
+
+		/*
+		 * If the position is not NULL,
+		 * we have found a space character, we move every thing from
+		 * this position to the end
+		 */
+		if(_pos != NULL) {
+
+			/* move every thing to the right */
+			memmove(++fname, _pos+sizeof(char), _end_pos - (_pos+sizeof(char)));
+
+			/* fill the blanks with escaped space */
+
+			*_pos = USENET_BACKSLASH_CHAR;
+			*(_pos + sizeof(char)) = USENET_SPACE_CHAR;
+		}
+
+		/*
+		 * If space character was found we record it
+		 * on the next round, we set it to NULL.
+		 */
+		if(*fname == USENET_SPACE_CHAR)
+			_pos = fname;
+		else
+			_pos = NULL;
+
+		fname++;
+	}
+
+	return USENET_SUCCESS;
+}
+
+
+int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf, size_t* sz)
+{
+	*sz = strlen(dir) + strlen(fname) + 2;
+
+	*nbuf = (char*) malloc(*sz * sizeof(char));
+	sprintf(*nbuf, "%s/%s", dir, fname);
+
+	return USENET_SUCCESS;
+}
+
+/* helper method for renaming the file */
+static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list, const char* file_path)
+{
+	size_t _rfname_sz = 0;
+	char* _rfname = NULL;
+	const char* _ext = NULL;
+	int _ret = USENET_SUCCESS;
+
+	/* get file extension */
+	_ext = _usenet_utils_get_ext(file_path);
+
+	/* make the new file name */
+	_rfname_sz = strlen(list->_dest_dir) + strlen(list->_u_std_fname) + strlen(_ext) + 1;
+	_rfname = (char*) malloc((_rfname_sz + 1) * sizeof(char));
+	sprintf(_rfname, "%s/%s%s", list->_dest_dir, list->_u_std_fname, _ext);
+
+	USENET_LOG_MESSAGE_ARGS("renaming file %s to %s", file_path, _rfname);
+
+	/* we only do a rename if a original and the new paths are different */
+	if(!strcmp(file_path, _rfname) || !rename(file_path, _rfname)) {
+		/* errors have occured */
+		USENET_LOG_MESSAGE_ARGS("errors occured while renaming the file %s", strerror(errno));
+		_ret = USENET_ERROR;
+	}
+
+	free(_rfname);
+	_rfname = NULL;
+
+	return _ret;
+}
+
+/* find the last occurance of a period character */
+static inline __attribute__ ((always_inline)) const char* _usenet_utils_get_ext(const char* fname)
+{
+	const char* _pos = NULL;
+	do {
+		_pos = fname;
+	} while((fname = strchr(fname+1, USENET_FULLSTOP_CHAR)));
+
+	return _pos;
 }

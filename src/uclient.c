@@ -28,10 +28,11 @@ struct uclient
 	 */
 	volatile sig_atomic_t _pulse_sent;
 	volatile sig_atomic_t _ini_wait_flg;						/* flag for the initial wait */
-	unsigned int _act_ix;										/* index for the action to be taken */
+	volatile unsigned int _act_ix;								/* index for the action to be taken */
 	volatile unsigned int _probe_nzb_flg;						/* flag to indicate probe nzbget */
 
 	pid_t _child_pid;											/* child process ID */
+	pid_t _nzbget_pid;											/* nzbget process ID */
 
 	int _pulse_counter;											/* pulse counter */
 	const char* _server_name;									/* server name */
@@ -45,13 +46,17 @@ struct uclient
 
 static int _data_receive_callback(void* self, void* data, size_t sz);
 static void _signal_hanlder(int signal);
+
 static inline __attribute__ ((always_inline)) int _default_response(struct uclient* client, struct usenet_message* msg);
+static inline __attribute__ ((always_inline)) int _send_pulse(struct uclient* client);
+
 static int _msg_handler(struct uclient* cli, struct usenet_message* msg);
 static int _action_json(struct uclient* cli, const char* json_msg);
 static int _echo_daemon_check_to_parent(struct uclient* cli);
 static int _echo_update_list(struct uclient* cli);
 static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg);
 static int _terminate_client(struct uclient* cli);
+static int _check_nzb_list(struct uclient* cli);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -145,6 +150,7 @@ int init_client(struct uclient* cli)
 	cli->_act_ix = 0;
 	cli->_probe_nzb_flg = 0;
 	cli->_child_pid = -1;
+	cli->_nzbget_pid = -1;
 
 	/* initialise thread */
 
@@ -193,9 +199,6 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 
 int pulse_client(struct uclient* cli)
 {
-	struct usenet_message _msg;
-	thcon* _con = NULL;
-
 	/*
 	 * We only send a pulse every USENET_CLIENT_MSG_PULSE_GAP
 	 */
@@ -209,18 +212,15 @@ int pulse_client(struct uclient* cli)
 	if(cli->_probe_nzb_flg)
 		_echo_update_list(cli);
 
+	/* if nzbget child process exists */
+	if(cli->_nzbget_pid > 0)
+		_check_nzb_list(cli);
+
 	/* reset counter back to 0 to start timer again */
 	cli->_pulse_counter = 0;
 
-	memset(&_msg, 0, sizeof(struct usenet_message));
-	_msg.ins = USENET_REQUEST_PULSE;
-	sprintf(_msg.msg_body, "%s", "alive");
-
-	/* get pointer to the connection object */
-	_con = &cli->_connection;
-
-	USENET_LOG_MESSAGE("sending server pulse");
-	thcon_send_info(_con, (void*) &_msg, sizeof(struct usenet_message));
+	/* send pulse to server */
+	_send_pulse(cli);
 
 	/*
 	 * Check if the server has responded to the previous.
@@ -245,7 +245,8 @@ static void _signal_hanlder(int signal)
 /* Default reponse */
 static int _default_response(struct uclient* client, struct usenet_message* msg)
 {
-	msg->ins = 0;
+	USENET_LOG_MESSAGE("sending default response");
+	msg->ins = USENET_REQUEST_RESPONSE;
 	thcon_send_info(&client->_connection, msg, sizeof(struct usenet_message));
 
 	/*
@@ -302,10 +303,7 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg)
 static int _action_json(struct uclient* cli, const char* json_msg)
 {
 	int _ret = USENET_SUCCESS, _i = 0, _num_tok = 0;
-	pid_t _nzbget_pid = -1;
-
 	jsmntok_t* _json_tok = NULL, *_json_args = NULL;
-
 	struct usenet_str_arr _str_arr = {0};
 
 	/* parse the json message */
@@ -359,9 +357,9 @@ static int _action_json(struct uclient* cli, const char* json_msg)
 	if(_ret == USENET_ERROR)
 		return _ret;
 
-	_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
+	cli->_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
 
-	if(_nzbget_pid < 0) {
+	if(cli->_nzbget_pid < 0) {
 		USENET_LOG_MESSAGE("process not initialised, spawning nzbget");
 
 		/* fork the process here, call system to spawn nzbget */
@@ -383,7 +381,7 @@ static int _action_json(struct uclient* cli, const char* json_msg)
 		}
 	}
 	else {
-		USENET_LOG_MESSAGE_ARGS("process found with pid %i", _nzbget_pid);
+		USENET_LOG_MESSAGE_ARGS("process found with pid %i", cli->_nzbget_pid);
 		_echo_update_list(cli);
 	}
 
@@ -394,7 +392,7 @@ static int _echo_daemon_check_to_parent(struct uclient* cli)
 {
 	struct usenet_message _msg;
 
-	_msg.ins = USENET_REQUEST_BORADCAST;
+	_msg.ins = USENET_REQUEST_BROADCAST;
 	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}", USENET_JSON_FN_HEADER, USENET_JSON_FN_1, USENET_JSON_ARG_HEADER);
 
 	USENET_LOG_MESSAGE("broadcasting message to parent to indicate it I am complete");
@@ -431,6 +429,9 @@ static int _handle_unknown_message(struct uclient* cli, struct usenet_message* m
 	if(strcmp(_rpc_val, USENET_JSON_FN_1) == 0) {
 		USENET_LOG_MESSAGE("echo message received from child process, nzbget is launched successfully");
 		cli->_probe_nzb_flg = 1;
+
+		/* get the pid of newly spawned nzbget instance */
+		cli->_nzbget_pid = usenet_find_process(USENET_CLIENT_NZBGET_CLIENT);
 	}
 	else if(strcmp(_rpc_val, USENET_JSON_FN_2) == 0) {
 		USENET_LOG_MESSAGE("echo message received to update the nzbget list");
@@ -465,12 +466,84 @@ static int _echo_update_list(struct uclient* cli)
 {
 	struct usenet_message _msg;
 
-	_msg.ins = USENET_REQUEST_BORADCAST;
+	_msg.ins = USENET_REQUEST_BROADCAST;
 	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}", USENET_JSON_FN_HEADER, USENET_JSON_FN_2, USENET_JSON_ARG_HEADER);
 
 	USENET_LOG_MESSAGE("broadcasting message update list");
 
 	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
+
+	/*
+	 * we turn the probe flag off as we don't want nzbget to
+	 * scan continuously.
+	 */
+	cli->_probe_nzb_flg = 0;
+	return USENET_SUCCESS;
+}
+
+static inline __attribute__ ((always_inline)) int _send_pulse(struct uclient* client)
+{
+	struct usenet_message _msg = {0};
+	thcon* _con = NULL;
+
+	memset(&_msg, 0, sizeof(struct usenet_message));
+	_msg.ins = USENET_REQUEST_PULSE;
+	sprintf(_msg.msg_body, "%s", "alive");
+
+	/* get pointer to the connection object */
+	_con = &client->_connection;
+
+	USENET_LOG_MESSAGE("sending server pulse");
+	thcon_send_info(_con, (void*) &_msg, sizeof(struct usenet_message));
+
+	return USENET_SUCCESS;
+}
+
+/*
+ * Queries the nzbget list and once which are finished
+ * can be renamed and scp to the server.
+ */
+static int _check_nzb_list(struct uclient* cli)
+{
+	int _i = 0;
+	size_t _list_sz = 0;
+	struct usenet_nzb_filellist* _list = NULL;
+
+	USENET_LOG_MESSAGE_ARGS("found nzbget with pid %i, getting history", cli->_nzbget_pid);
+
+	/* call the interface method for getting a list */
+	usenet_nzb_get_history(&_list, &_list_sz);
+
+	/* iterate through the list and action */
+	for(_i = 0; _i < _list_sz; _i++) {
+
+		/* do stuff here */
+		if(!_list[_i]._nzb_name || !_list[_i]._status)
+			continue;
+
+		/* create standard name field and copy to it */
+		usenet_utils_append_std_fname(&_list[_i]);
+
+		USENET_LOG_MESSAGE_ARGS("nzb file name: %s, and status: %s", _list[_i]._u_std_fname, _list[_i]._status);
+
+		/*
+		 * If the download was not sucessful, we continue with the
+		 * next one.
+		 */
+		if(strcmp(_list[_i]._status, USENET_NZB_SUCCESS))
+			continue;
+
+		/* rename the file to the new one */
+		if(usenet_utils_rename_file(&_list[_i], cli->_login.nzb_fsize_threshold) == USENET_SUCCESS)
+			usenet_nzb_delete_item_from_history(&_list[_i]._nzb_id, 1);
+	}
+
+	/* free the list and return */
+	USENET_LOG_MESSAGE("free file list");
+	for(_i = 0; _i < _list_sz; _i++) {
+		USENET_FILELIST_FREE(&_list[_i]);
+	}
+	free(_list);
 
 	return USENET_SUCCESS;
 }

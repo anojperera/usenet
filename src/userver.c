@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 #include "usenet.h"
 #include "thcon.h"
 
@@ -42,6 +43,9 @@ static int _initialise_contact(struct userver* svr);
 static void _signal_hanlder(int signal);							/* signal handler */
 static int _msg_handler(struct userver* svr, struct usenet_message* msg);
 
+static inline __attribute__ ((always_inline)) int _send_function_req(struct userver* svr, struct usenet_message* msg);
+static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver* svr, struct usenet_message* msg);
+static inline __attribute__ ((always_inline)) int _reset_ix_conn_flg(struct userver* svr);
 
 /* Methods for constructing jsons */
 static int _msg_get_nzb(const char* nzb, const char* msg_body);
@@ -57,14 +61,28 @@ volatile sig_atomic_t term_sig = 1;									/* signal */
 int main(int argc, char** argv)
 {
 	int sec_cnt = 0;												/* second counter */
+	struct usenet_message _msg = {0};
 
 	if(init_server(&server) == USENET_ERROR)
 		return USENET_ERROR;
 
 	signal(SIGINT, _signal_hanlder);
 	while(term_sig) {
-		if(sec_cnt++ % server._login.scan_freq)
+
+		if(sec_cnt++ % server._login.scan_freq) {
 			_initialise_contact(&server);
+		}
+
+		/* send client a new function request if the file was updated */
+		if(usenet_utils_time_diff(USENET_SERVER_JSON_PATH) == server._login.scan_freq &&
+			server._conn_flg) {
+
+			USENET_LOG_MESSAGE("request json changed, sending request to client to reset index");
+
+			/* reset the index and action flg*/
+			_send_reset_req(&server, &_msg);
+		}
+
 		sleep(1);
 	}
 
@@ -174,7 +192,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 
 	memcpy(&_msg, data, sz);
 
-	USENET_LOG_MESSAGE("message received from client");
+	USENET_LOG_MESSAGE_ARGS("message received from client, action ix: %i", _server->_act_ix);
 	_msg_handler(_server, &_msg);
 
 	return USENET_SUCCESS;
@@ -265,16 +283,11 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 	case 0:
 		if(svr->_accept_flg <= 0 || msg->ins != USENET_REQUEST_RESPONSE)
 			break;
-
-		USENET_LOG_MESSAGE("response accepted from client");
+		USENET_LOG_MESSAGE_ARGS("response accepted from client with ins: %x", msg->ins);
 		svr->_accept_flg = 0;
 
 		/* send a json request */
-		msg->ins = USENET_REQUEST_FUNCTION;
-		_msg_get_nzb(NULL, msg->msg_body);
-
-		USENET_LOG_MESSAGE("sending message to client");
-		thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+		_send_function_req(svr, msg);
 
 		/* increment action index to the next message */
 		svr->_act_ix++;
@@ -282,9 +295,25 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 	case 1:
 		if(msg->ins != USENET_REQUEST_RESPONSE)
 			break;
-
-		USENET_LOG_MESSAGE("response accepted from client");
+		USENET_LOG_MESSAGE_ARGS("response accepted from client with ins: %x", msg->ins);
 		svr->_act_ix++;
+		break;
+	case 2:
+		if(msg->ins != USENET_REQUEST_RESPONSE)
+			break;
+
+		USENET_LOG_MESSAGE("responding to clients reset response with a command request");
+
+		usenet_message_init(msg);
+		usenet_message_request_instruct(msg);
+
+		/*
+		 * Reset the connection flag and action index,
+		 * the message handler then go through another iteration
+		 * of the action list.
+		 */
+		_reset_ix_conn_flg(svr);
+
 	default:
 		break;
 	}
@@ -292,11 +321,11 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 	if(msg->ins == USENET_REQUEST_PULSE)
 		USENET_LOG_MESSAGE("responding to client's pulse");
 
-	if(msg->ins == USENET_REQUEST_BORADCAST)
+	if(msg->ins == USENET_REQUEST_BROADCAST)
 		USENET_LOG_MESSAGE("responding to client's broadcast request");
 
 	/* echo back the message if its pulse or broadcast */
-	if(msg->ins == USENET_REQUEST_PULSE || msg->ins == USENET_REQUEST_BORADCAST) {
+	if(msg->ins == USENET_REQUEST_PULSE || msg->ins == USENET_REQUEST_BROADCAST) {
 		thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
 		USENET_LOG_MESSAGE("sent client response");
 	}
@@ -331,6 +360,36 @@ static int _msg_get_nzb(const char* nzb, const char* msg_body)
 	}
 	if(_buff != NULL)
 		free(_buff);
+
+	return USENET_SUCCESS;
+}
+
+static inline __attribute__ ((always_inline)) int _send_function_req(struct userver* svr, struct usenet_message* msg)
+{
+	msg->ins = USENET_REQUEST_FUNCTION;
+	_msg_get_nzb(NULL, msg->msg_body);
+
+	USENET_LOG_MESSAGE("sending message to client");
+	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+	return USENET_SUCCESS;
+}
+
+static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver* svr, struct usenet_message* msg)
+{
+	msg->ins = USENET_REQUEST_RESET;
+	USENET_LOG_MESSAGE("sending message to client");
+	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+	return USENET_SUCCESS;
+}
+
+/*
+ * This method resets the action index and set the connection flag
+ * back in to the accepted state.
+ */
+static inline __attribute__ ((always_inline)) int _reset_ix_conn_flg(struct userver* svr)
+{
+	svr->_act_ix = 0;
+	svr->_accept_flg = 1;
 
 	return USENET_SUCCESS;
 }
