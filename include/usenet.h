@@ -17,6 +17,9 @@
 #include <string.h>
 #include <stdarg.h>
 
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+
 #include "jsmn.h"
 
 #define USENET_SUCCESS 0
@@ -34,13 +37,25 @@
 #define USENET_PULSE_SENT 1
 #define USENET_PULSE_RESET 0
 
-#define USENET_BLANKSPACE_CHAR 32
+#define USENET_NEW_LINE_CHAR 10
+#define USENET_ARRAY_CHAR_BEGIN 91
+#define USENET_BACKSLASH_CHAR 92
+#define USENET_ARRAY_CHAR_END 93
+#define USENET_SPACE_CHAR 32
+#define USENET_DOUBLEQ_CHAR 34
+#define USENET_PLUS_CHAR 43
+#define USENET_USCORE_CHAR 95
+#define USENET_FULLSTOP_CHAR 46
+
+#define USENET_BLANKSPACE_CHAR USENET_SPACE_CHAR
 
 #define USENET_JSON_FN_HEADER "rpc"
 #define USENET_JSON_ARG_HEADER "args"
 
 #define USENET_JSON_FN_1 "usenet_complete"
 #define USENET_JSON_FN_2 "usenet_update_list"
+
+#define USENET_NZB_SUCCESS "SUCCESS/UNPACK"
 
 struct gapi_login
 {
@@ -59,6 +74,7 @@ struct gapi_login
     int exp;						/* expiry time since unix start */
     int iat;						/* start time since unix start time */
 	int svr_wait_time;				/* default server wait time */
+	int nzb_fsize_threshold;		/* file size tolerance */
 	config_t _config;
 };
 
@@ -79,22 +95,39 @@ struct usenet_str_arr
 /* struct for getting the nzb file state */
 struct usenet_nzb_filellist
 {
-	int _id;
 	int _nzb_id;
+	int _file_size;
+	int _remaining_size;
+	int _active_downloads;
+
 	char* _nzb_file_name;
-	char* _subject;
 	char* _nzb_name;
 	char* _dest_dir;
-	int file_size_lo;
-	int file_size_hi;
-	int remaining_size_lo;
-	int remaining_size_hi;
-	int paused;
-	int posttime;
-	int priority;
-	int active_downloadsint;
+	char* _final_dir;
+	char* _status;
+
+	char* _u_std_fname;
 };
 
+#define USENET_FILELIST_FREE(item)				\
+	if((item)->_nzb_file_name)					\
+		free((item)->_nzb_file_name);			\
+	if((item)->_nzb_name)						\
+		free((item)->_nzb_name);				\
+	if((item)->_dest_dir)						\
+		free((item)->_dest_dir);				\
+	if((item)->_final_dir)						\
+		free((item)->_final_dir);				\
+	if((item)->_status)							\
+		free((item)->_status);					\
+	if((item)->_u_std_fname)					\
+		free((item)->_u_std_fname);				\
+	(item)->_nzb_file_name = NULL;				\
+	(item)->_nzb_name = NULL;					\
+	(item)->_dest_dir = NULL;					\
+	(item)->_final_dir = NULL;					\
+	(item)->_status = NULL;						\
+	(item)->_u_std_fname = NULL
 
 
 int usenet_utils_load_config(struct gapi_login* login);
@@ -123,6 +156,36 @@ size_t usenet_utils_count_blanks(const char* message);
 int usenet_utils_remove_chars(char* str, size_t len);
 
 /*
+ * Get the access time difference between present time.
+ */
+int usenet_utils_time_diff(const char* file);
+
+
+int usenet_utils_append_std_fname(struct usenet_nzb_filellist* list);
+
+/*
+ * Standardise file name by replacing space characters
+ * with an underscore.
+ */
+int usenet_utils_stdardise_file_name(char* file_name);
+
+/*
+ * Rename file to the new path
+ */
+int usenet_utils_rename_file(struct usenet_nzb_filellist* list, int threshold);
+
+/*
+ * Escape blank spaces of a filename/ file path
+ */
+int usenet_utils_escape_blanks(char* fname, size_t sz);
+
+/*
+ * Construct new file name
+ */
+int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf, size_t* sz);
+
+
+/*
  * JSON Parser helper methods
  */
 int usjson_parse_message(const char* msg, jsmntok_t** tok, int* num);
@@ -134,6 +197,16 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
  */
 int usenet_update_nzb_list(void);
 int usenet_nzb_scan(void);
+int usenet_nzb_get_filelist(struct usenet_nzb_filellist** f_list, size_t* num);
+int usenet_nzb_get_history(struct usenet_nzb_filellist** f_list, size_t* num);
+int usenet_nzb_delete_item_from_history(int* ids, size_t num);
+
+
+/*
+ * xml rpc methods
+ */
+int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlDocPtr* res);
+
 
 #define USENET_REQUEST_RESPONSE 0x00
 #define USENET_REQUEST_RESPONSE_PENDING 0x01
@@ -142,10 +215,10 @@ int usenet_nzb_scan(void);
 #define USENET_REQUEST_DOWNLOAD 0x04
 #define USENET_REQUEST_FUNCTION 0x05
 #define USENET_REQUEST_PULSE 0x06
-#define USENET_REQUEST_BORADCAST 0x07
+#define USENET_REQUEST_BROADCAST 0x07
 
 /* helper method for logging */
-static inline __attribute__ ((always_inline)) void _usenet_log_message(const char* msg)
+static inline __attribute__ ((always_inline)) void _usenet_log_message(const char* msg, const char* fname, int line)
 {
 	struct tm* _time;
 	int _len = 0;
@@ -162,31 +235,31 @@ static inline __attribute__ ((always_inline)) void _usenet_log_message(const cha
 	sprintf(_buff+_len, "[%d] %s", getpid(), msg);
 
 	/* print to file */
-    fprintf(stdout, "%s - %s line %i\n", _buff, __FILE__, __LINE__);
+    fprintf(stdout, "%s - %s line %i\n", _buff, fname, line);
 	return;
 }
 
 /* helper method for loggin with arguments (not strict inlined) */
-static inline void _usenet_log_message_args(const char* msg, ...)
+static inline void _usenet_log_message_args(const char* msg, const char* fname, int line, ...)
 {
 	/* format the message */
 	va_list _list;
 
 	char _buff[USENET_LOG_MESSAGE_SZ] = {};
-	va_start(_list, msg);
+	va_start(_list, line);
 	vsprintf(_buff, msg, _list);
 	va_end(_list);
-	_usenet_log_message(_buff);
+	_usenet_log_message(_buff, fname, line);
 
 	return;
 }
-#define USENET_LOG_MESSAGE(msg)					\
-	_usenet_log_message(msg)
-#define USENET_LOG_MESSAGE_ARGS(msg, ...)		\
-	_usenet_log_message_args(msg, __VA_ARGS__)
-#define USENET_LOG_MESSAGE_WITH_INT(msg, val)	\
-    fprintf(stdout, "[%s %s] %s%i - %s line %i\n", __DATE__, __TIME__, (msg), (val), __FILE__, __LINE__)
-#define USENET_LOG_MESSAGE_WITH_STR(msg, val)	\
-    fprintf(stdout, "[%s %s] %s%s - %s line %i\n", __DATE__, __TIME__, (msg), (val), __FILE__, __LINE__)
 
+#define USENET_LOG_MESSAGE(msg)					\
+	_usenet_log_message(msg, __FILE__, __LINE__)
+#define USENET_LOG_MESSAGE_ARGS(msg, ...)		\
+	_usenet_log_message_args(msg, __FILE__, __LINE__, __VA_ARGS__)
+
+
+#define USENET_CONV_MB(sz)						\
+	sz / (1000 * 1000)
 #endif /* _USENET_H_ */
