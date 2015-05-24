@@ -20,13 +20,14 @@
 
 #include "usenet.h"
 
-#define USENET_XMLRPC_SERVER_URL "http://nzbget:tegbzn6789@localhost:6789/xmlrpc"
-
+#define USENET_XMLRPC_SERVER_URL "http://127.0.0.1:6789/xmlrpc"
+#define USENET_XMLRPC_USERNAME_PASS "nzbget:tegbzn6789"
 #define USENET_XMLRPC_HEADER_BUF_SZ 256
 
 #define USENET_XMLRPC_USERAGENT "libcurl-agent/1.0"
 #define USENET_XMLRPC_HEADER1 "Content-Type: text/xml"
 #define USENET_XMLRPC_HEADER2 "Content-length: %i"
+#define USENET_XMLRPC_CURL_TIMEOUT 5L
 
 
 /* buffer to hold the data returned from the server */
@@ -65,7 +66,8 @@ int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlD
 		return USENET_ERROR;
 
 	/* serialise the xml and get the size */
-	xmlDocDumpFormatMemory(_req_xmldoc, &_xml_mem, &_xml_sz, 1);
+	xmlDocDumpFormatMemory(_req_xmldoc, &_xml_mem, &_xml_sz, 0);
+	USENET_LOG_MESSAGE_ARGS("xml to be sent %s", (char*) _xml_mem);
 
 	sprintf(_hbuf, USENET_XMLRPC_HEADER2, _xml_sz);
 
@@ -89,6 +91,10 @@ int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlD
 	_hlist = curl_slist_append(_hlist, USENET_XMLRPC_HEADER1);
 	_hlist = curl_slist_append(_hlist, _hbuf);
 
+	/* set http basic authentication */
+	curl_easy_setopt(_curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+	curl_easy_setopt(_curl, CURLOPT_USERPWD, USENET_XMLRPC_USERNAME_PASS);
+
 	/*
 	 * Set curl options for url, writing data, callback and
 	 * and header list.
@@ -98,6 +104,13 @@ int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlD
 	curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, _hlist);
 	curl_easy_setopt(_curl, CURLOPT_USERAGENT, USENET_XMLRPC_USERAGENT);
 	curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, _write_content_callback);
+
+	/* set time out */
+	curl_easy_setopt(_curl, CURLOPT_TIMEOUT, USENET_XMLRPC_CURL_TIMEOUT);
+
+	/* set post fields */
+	curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, (char*) _xml_mem);
+
 
 	curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &_cbuf);
 
@@ -131,9 +144,90 @@ int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlD
 	USENET_LOG_MESSAGE("cleaning up curl after rpc call");
 	curl_easy_cleanup(_curl);
 
+	if(_xml_mem)
+		xmlFree(_xml_mem);
+
 	return _ret;
 }
 
+int usenet_uxmlrpc_get_node_count(xmlNodePtr root_node, const char* key, int* count, xmlNodePtr* node)
+{
+	int _val_flg = 0;
+	xmlNodePtr _child_node = NULL;
+
+	/* find the value node */
+	_child_node = xmlFirstChildElement(root_node);
+	do {
+
+		/* check for value */
+		/* set val flag to true and find get the value node */
+		if(strcmp((char*) _child_node->name, key) == 0)
+			_val_flg += 1;
+
+		/* break out of the loop */
+		if(_val_flg > 1)
+			break;
+
+		_child_node = xmlFirstChildElement(_child_node);
+
+	}while(_child_node != NULL);
+
+
+	*node = _child_node;
+
+	/* get count */
+	while(_child_node) {
+		(*count) += 1;
+		_child_node = xmlNextElementSibling(_child_node);
+	}
+
+	return USENET_SUCCESS;
+}
+
+int usenet_uxmlrpc_get_member(xmlNodePtr member_node, const char* name, char** value)
+{
+	xmlNodePtr _child_node = NULL;
+	xmlChar* _name_val = NULL;
+
+	if(strcmp((char*) member_node->name, "member") != 0) {
+		USENET_LOG_MESSAGE("node is not a member");
+		return USENET_ERROR;
+	}
+
+	_child_node = xmlFirstChildElement(member_node);
+	if(_child_node == NULL)
+		return USENET_ERROR;
+
+	if(strcmp((char*) _child_node->name, "name") != 0)
+		return USENET_ERROR;
+
+	/* if the element is the name, compare the field */
+	_name_val = xmlNodeGetContent(_child_node);
+	if(_name_val == NULL)
+		return USENET_ERROR;
+
+	/* if the name doesn't match clean up and exit */
+	if(strcmp(_name_val, name) != 0)
+		goto cleanup;
+
+	/* get the next sibling */
+	if(!(_child_node = xmlNextElementSibling(_child_node)) &&
+	   strcmp(_child_node->name, USENET_NZBGET_XMLRESPONSE_VALUE))
+		goto cleanup;
+
+	_child_node = xmlFirstChildElement(_child_node);
+	if(!_child_node)
+		goto cleanup;
+
+	/* get the contents of field */
+	*value = (char*) xmlNodeGetContent(_child_node);
+
+cleanup:
+	if(_name_val)
+		xmlFree(_name_val);
+
+	return USENET_SUCCESS;
+}
 
 static unsigned int _write_content_callback(void* contents, size_t size, size_t nmemb, void* userp)
 {
@@ -163,7 +257,6 @@ static int _create_xml_para(const char* method, char** paras, size_t size, xmlDo
 {
 	size_t _i = 0;
 	xmlNodePtr _root_node = NULL;
-	xmlNodePtr _method_node = NULL;
 	xmlNodePtr _paras_node = NULL;
 	xmlNodePtr _para_node = NULL;
 
@@ -171,8 +264,6 @@ static int _create_xml_para(const char* method, char** paras, size_t size, xmlDo
 		USENET_LOG_MESSAGE("parameters set to NULL or size is incorrect");
 		return USENET_ERROR;
 	}
-
-
 
 	/* creates the document */
 	*xmldoc = xmlNewDoc(BAD_CAST "1.0");
@@ -183,11 +274,11 @@ static int _create_xml_para(const char* method, char** paras, size_t size, xmlDo
 
 
 	/* create method name */
-	_method_node = xmlNewChild(_root_node, NULL, BAD_CAST "methodName", (xmlChar*) method);
+	xmlNewChild(_root_node, NULL, BAD_CAST "methodName", (xmlChar*) method);
 
 
 	/* create parameters node */
-	_paras_node = xmlNewChild(_method_node, NULL, BAD_CAST "params", NULL);
+	_paras_node = xmlNewChild(_root_node, NULL, BAD_CAST "params", NULL);
 
 	/* iterate over the parameter list and add to the parameters */
 	for(_i = 0; _i < size; _i++) {
