@@ -57,6 +57,11 @@
 
 #define USENET_NZB_SUCCESS "SUCCESS/UNPACK"
 
+#define USENET_NZBGET_XMLRESPONSE_VALUE "value"
+#define USENET_NZBGET_XMLRESPONSE_ARRAY "array"
+#define USENET_NZBGET_XMLRESPONSE_MEMBER "member"
+#define USENET_NZBGET_XMLRESPONSE_NAME "name"
+
 struct gapi_login
 {
     const char* p12_path;			/* path for the p12 cert */
@@ -206,7 +211,8 @@ int usenet_nzb_delete_item_from_history(int* ids, size_t num);
  * xml rpc methods
  */
 int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlDocPtr* res);
-
+int usenet_uxmlrpc_get_node_count(xmlNodePtr root_node, const char* key, int* count, xmlNodePtr* node);
+int usenet_uxmlrpc_get_member(xmlNodePtr member_node, const char* name, char** value);
 
 #define USENET_REQUEST_RESPONSE 0x00
 #define USENET_REQUEST_RESPONSE_PENDING 0x01
