@@ -512,6 +512,7 @@ static int _check_nzb_list(struct uclient* cli)
 	USENET_LOG_MESSAGE_ARGS("found nzbget with pid %i, getting history", cli->_nzbget_pid);
 
 	/* call the interface method for getting a list */
+	USENET_LOG_MESSAGE("getting history list");
 	usenet_nzb_get_history(&_list, &_list_sz);
 
 	/* iterate through the list and action */

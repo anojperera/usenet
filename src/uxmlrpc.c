@@ -67,7 +67,6 @@ int usenet_uxmlrpc_call(const char* method_name, char** paras, size_t size, xmlD
 
 	/* serialise the xml and get the size */
 	xmlDocDumpFormatMemory(_req_xmldoc, &_xml_mem, &_xml_sz, 0);
-	USENET_LOG_MESSAGE_ARGS("xml to be sent %s", (char*) _xml_mem);
 
 	sprintf(_hbuf, USENET_XMLRPC_HEADER2, _xml_sz);
 
@@ -156,7 +155,7 @@ int usenet_uxmlrpc_get_node_count(xmlNodePtr root_node, const char* key, int* co
 	xmlNodePtr _child_node = NULL;
 
 	/* find the value node */
-	_child_node = xmlFirstChildElement(root_node);
+	_child_node = xmlFirstElementChild(root_node);
 	do {
 
 		/* check for value */
@@ -168,7 +167,7 @@ int usenet_uxmlrpc_get_node_count(xmlNodePtr root_node, const char* key, int* co
 		if(_val_flg > 1)
 			break;
 
-		_child_node = xmlFirstChildElement(_child_node);
+		_child_node = xmlFirstElementChild(_child_node);
 
 	}while(_child_node != NULL);
 
@@ -189,12 +188,15 @@ int usenet_uxmlrpc_get_member(xmlNodePtr member_node, const char* name, char** v
 	xmlNodePtr _child_node = NULL;
 	xmlChar* _name_val = NULL;
 
+	/* initialise to NULL */
+	*value = NULL;
+
 	if(strcmp((char*) member_node->name, "member") != 0) {
 		USENET_LOG_MESSAGE("node is not a member");
 		return USENET_ERROR;
 	}
 
-	_child_node = xmlFirstChildElement(member_node);
+	_child_node = xmlFirstElementChild(member_node);
 	if(_child_node == NULL)
 		return USENET_ERROR;
 
@@ -207,15 +209,15 @@ int usenet_uxmlrpc_get_member(xmlNodePtr member_node, const char* name, char** v
 		return USENET_ERROR;
 
 	/* if the name doesn't match clean up and exit */
-	if(strcmp(_name_val, name) != 0)
+	if(strcmp((char*) _name_val, name) != 0)
 		goto cleanup;
 
 	/* get the next sibling */
 	if(!(_child_node = xmlNextElementSibling(_child_node)) &&
-	   strcmp(_child_node->name, USENET_NZBGET_XMLRESPONSE_VALUE))
+	   strcmp((char*) _child_node->name, USENET_NZBGET_XMLRESPONSE_VALUE))
 		goto cleanup;
 
-	_child_node = xmlFirstChildElement(_child_node);
+	_child_node = xmlFirstElementChild(_child_node);
 	if(!_child_node)
 		goto cleanup;
 

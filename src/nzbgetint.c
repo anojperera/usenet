@@ -8,6 +8,10 @@
 
 #include <xmlrpc-c/base.h>
 #include <xmlrpc-c/client.h>
+
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+
 #include "usenet.h"
 
 #define NAME       "XML-RPC C Auth Client"
@@ -23,12 +27,16 @@
 #define USENET_NZBGET_NUM_GROUPS 10
 
 #define USENET_NZBGET_INIT_LIST(list)			\
+	(list)->_nzb_id = 0;						\
+	(list)->_file_size = 0;						\
+	(list)->_remaining_size = 0;				\
+	(list)->_active_downloads = 0;				\
 	(list)->_nzb_file_name = NULL;				\
 	(list)->_nzb_name = NULL;					\
 	(list)->_dest_dir = NULL;					\
 	(list)->_final_dir = NULL;					\
-	(list)->_status = NULL
-
+	(list)->_status = NULL;						\
+	(list)->_u_std_fname = NULL
 
 #define USENET_NZBGET_COPY_ELEMENT(element, value)				\
 	(element) = (char*) malloc(strlen((const char*) (value)) +1);	\
@@ -49,7 +57,8 @@
 		goto clean_up;													\
     }
 
-static int nzb_populate_flist(xmlrpc_env* env, xmlrpc_value* resultp, struct usenet_nzb_filellist* f_list, int ix);
+static int _nzb_populate_flist(xmlrpc_env* env, xmlrpc_value* resultp, struct usenet_nzb_filellist* f_list, int ix);
+static int _nzb_populate_flist2(xmlNodePtr member, struct usenet_nzb_filellist* f_list);
 
 int usenet_update_nzb_list(void)
 {
@@ -187,7 +196,7 @@ int usenet_nzb_get_filelist(struct usenet_nzb_filellist** f_list, size_t* num)
 	*f_list = (struct usenet_nzb_filellist*) calloc( *num, sizeof(struct usenet_nzb_filellist));
 	USENET_LOG_MESSAGE("polulating file list");
 	for(_i = 0; _i < (*num); _i++) {
-		nzb_populate_flist(&env, resultp, f_list[_i], _i);
+		_nzb_populate_flist(&env, resultp, f_list[_i], _i);
 	}
 
 clean_up:
@@ -206,110 +215,75 @@ clean_up:
 
 int usenet_nzb_get_history(struct usenet_nzb_filellist** f_list, size_t* num)
 {
-	int _i = 0;
-    xmlrpc_env env;
-	xmlrpc_client* client;
-	xmlrpc_server_info* _server_info = NULL;
+	int _stat = USENET_SUCCESS, _count = 0, _ix = 0;
+	xmlDocPtr _xmldoc = NULL;
+	xmlNodePtr _root_node = NULL;
+	xmlNodePtr _child_node = NULL;
+	xmlNodePtr _sibling_node = NULL;
 
-	xmlrpc_value* _paras = NULL;
-	xmlrpc_value* resultp = NULL;
+	char* _rpc_args[] = {"False"};
 
-	/* xmlrpc memory blocks for the call and response parser */
-	xmlrpc_mem_block* _resp_xml = NULL;
-	xmlrpc_mem_block* _call_xml = NULL;
+	_stat = usenet_uxmlrpc_call(USENET_NZBGET_HISTORY_METHOD, _rpc_args, 1, &_xmldoc);
+	if(_stat != USENET_SUCCESS) {
+		return USENET_ERROR;
+	}
 
-	*num = 0;
+	/* parse xml */
+	/* get root node */
+	_root_node = xmlDocGetRootElement(_xmldoc);
+	if(_root_node == NULL) {
+		USENET_LOG_MESSAGE("unable to get root node");
+		goto cleanup;
+	}
+
+	USENET_LOG_MESSAGE("getting a count of array returned by rpc response");
 
 	/*
-	 * For this method we use our own builder and parser.
-	 * The xmlrpc parser has shit limits.
+	 * _sibling_node pointer is set to the first value node found.
 	 */
-
-    /* Initialize our error-handling environment. */
-    xmlrpc_env_init(&env);
-
-	xmlrpc_client_setup_global_const(&env);
-	die_if_fault_occurred(&env);
-
-    /* Start up our XML-RPC client library. */
-	USENET_LOG_MESSAGE("initialising rpc client");
-	xmlrpc_client_create(&env, XMLRPC_CLIENT_NO_FLAGS, NAME, VERSION, NULL, 0, &client);
-    die_if_fault_occurred(&env);
-
-	USENET_LOG_MESSAGE("creating server info object");
-	_server_info = xmlrpc_server_info_new(&env, SERVER_URL);
-	die_if_fault_occurred(&env);
-
-    /* Start up our XML-RPC client library. */
-    USENET_LOG_MESSAGE_ARGS("Making XMLRPC call to server url %s method %s "
-	   "to get list", SERVER_URL, USENET_NZBGET_HISTORY_METHOD);
-
-
-	/* build parameters what would pass to the server */
-	_paras = xmlrpc_build_value(&env, "(b)", (xmlrpc_bool) 0);
-	die_if_fault_occurred(&env);
-
-	/* initliase the memory block */
-	_call_xml = XMLRPC_MEMBLOCK_NEW(char, &env, 0);
-	die_if_fault_occurred(&env);
-
-	/* seialise the values */
-	USENET_LOG_MESSAGE("parameters successfully build and is being serialised");
-	xmlrpc_serialize_call(&env, _call_xml, USENET_NZBGET_HISTORY_METHOD, _paras);
-	die_if_fault_occurred(&env);
-
-    /* Make the remote procedure call */
-	USENET_LOG_MESSAGE_ARGS("making the rpc call to get %s", USENET_NZBGET_HISTORY_METHOD);
-	xmlrpc_client_transport_call(&env, client, _server_info, _call_xml, &_resp_xml);
-    check_for_errors(&env);
-
-	resultp = xmlrpc_parse_response(&env,
-									XMLRPC_MEMBLOCK_CONTENTS(char, _resp_xml),
-									XMLRPC_MEMBLOCK_SIZE(char, _resp_xml));
-
-	*num = xmlrpc_array_size(&env, resultp);
-	USENET_LOG_MESSAGE_ARGS("nzbget return a list of %i", (*num));
-	if(!(*num) > 0) {
-		USENET_LOG_MESSAGE("cleaning up as the list is less than 0");
-		goto clean_up;
+	usenet_uxmlrpc_get_node_count(_root_node, USENET_NZBGET_XMLRESPONSE_VALUE, &_count, &_sibling_node);
+	if(_count <= 0) {
+		USENET_LOG_MESSAGE_ARGS("rpc response array returned %i", _count);
+		goto cleanup;
 	}
 
-	/* create an array to hold the structs */
-	*f_list = (struct usenet_nzb_filellist*) calloc(*num, sizeof(struct usenet_nzb_filellist));
+	/* alloc memmory to the list and populate it */
+	*num = _count;
+	*f_list = (struct usenet_nzb_filellist*) calloc(sizeof(struct usenet_nzb_filellist), _count);
 
-	USENET_LOG_MESSAGE("polulating file list");
-	for(_i = 0; _i < (*num); _i++) {
-		nzb_populate_flist(&env, resultp, &(*f_list)[_i], _i);
+	/* iterate over the members and get set the values */
+	USENET_LOG_MESSAGE("iterating over the members");
+	while(_sibling_node) {
+		_child_node = xmlFirstElementChild(_sibling_node);
+
+		/* initialise the list */
+		USENET_NZBGET_INIT_LIST(&(*f_list)[_ix]);
+
+		while(_child_node) {
+
+			/*
+			 * if the node is a member call the method and break
+			 * from inner loop.
+			 */
+			if(strcmp((char*) _child_node->name, USENET_NZBGET_XMLRESPONSE_MEMBER) == 0) {
+				_nzb_populate_flist2(_child_node, &(*f_list)[_ix]);
+				_child_node = xmlNextElementSibling(_child_node);
+			}
+			else {
+				_child_node = xmlFirstElementChild(_child_node);
+			}
+		}
+
+		_sibling_node = xmlNextElementSibling(_sibling_node);
+		_ix++;
 	}
 
+	USENET_LOG_MESSAGE("history list loaded successfully");
 
-clean_up:
-
-    /* Dispose of our result value. */
-	if(resultp != NULL)
-		xmlrpc_DECREF(resultp);
-
-	if(_call_xml)
-		XMLRPC_MEMBLOCK_FREE(char, _call_xml);
-
-	if(_resp_xml)
-		XMLRPC_MEMBLOCK_FREE(char, _resp_xml);
-
-	if(_paras)
-		xmlrpc_DECREF(_paras);
-
-    /* Clean up our error-handling environment. */
-    xmlrpc_env_clean(&env);
-
-    /* Shutdown our XML-RPC client library. */
-	USENET_LOG_MESSAGE("destroying server info");
-	xmlrpc_server_info_free(_server_info);
-
-    /* Shutdown our XML-RPC client library. */
-	xmlrpc_client_destroy(client);
-
-	xmlrpc_client_teardown_global_const();
-
+cleanup:
+	/* free xmldoc */
+	if(_xmldoc != NULL)
+		xmlFreeDoc(_xmldoc);
     return USENET_SUCCESS;
 }
 
@@ -379,7 +353,7 @@ int usenet_nzb_delete_item_from_history(int* ids, size_t num)
  * This fuction populates the file list struct.
  * Very inefficent as it duplicates memory like a dog.
  */
-static int nzb_populate_flist(xmlrpc_env* env, xmlrpc_value* resultp, struct usenet_nzb_filellist* f_list, int ix)
+static int _nzb_populate_flist(xmlrpc_env* env, xmlrpc_value* resultp, struct usenet_nzb_filellist* f_list, int ix)
 {
 	xmlrpc_value* _arr_val = NULL;
 	xmlrpc_value* _struct_val = NULL;
@@ -474,5 +448,62 @@ static int nzb_populate_flist(xmlrpc_env* env, xmlrpc_value* resultp, struct use
 	/* decrement reference count */
 	xmlrpc_DECREF(_arr_val);
 
+	return USENET_SUCCESS;
+}
+
+static int _nzb_populate_flist2(xmlNodePtr member, struct usenet_nzb_filellist* f_list)
+{
+	xmlChar* _name = NULL;
+	char* _value = NULL;
+	xmlNodePtr _child_node = NULL;
+
+	/* get the member name */
+	_child_node = xmlFirstElementChild(member);
+	if(_child_node == NULL)
+		return USENET_ERROR;
+
+	_name = xmlNodeGetContent(_child_node);
+	usenet_uxmlrpc_get_member(member, (char*) _name, &_value);
+
+	if(_value == NULL)
+		goto cleanup;
+
+	if(strcmp((char*) _name, "NZBID") == 0) {
+		f_list->_nzb_id = atoi(_value);
+	}
+	else if(strcmp((char*) _name, "NZBFilename") == 0) {
+		USENET_NZBGET_COPY_ELEMENT(f_list->_nzb_file_name,_value);
+	}
+	else if(strcmp((char*) _name, "NZBName") == 0) {
+		USENET_NZBGET_COPY_ELEMENT(f_list->_nzb_name, _value);
+	}
+	else if(strcmp((char*) _name, "DestDir") == 0) {
+		USENET_NZBGET_COPY_ELEMENT(f_list->_dest_dir, _value);
+	}
+	else if(strcmp((char*) _name, "FinalDir") == 0) {
+		USENET_NZBGET_COPY_ELEMENT(f_list->_final_dir, _value);
+	}
+	else if(strcmp((char*) _name, "FileSizeMB") == 0) {
+		f_list->_file_size = atoi(_value);
+	}
+	else if(strcmp((char*) _name, "RemainingSizeMB") == 0) {
+		f_list->_remaining_size = atoi(_value);
+	}
+	else if(strcmp((char*) _name, "ActiveDownloads") == 0) {
+		f_list->_active_downloads = atoi(_value);
+	}
+	else if(strcmp((char*) _name, "Status") == 0) {
+		USENET_NZBGET_COPY_ELEMENT(f_list->_status, _value);
+	}
+
+cleanup:
+	if(_value)
+		free(_value);
+
+	if(_name)
+		xmlFree(_name);
+
+	_name = NULL;
+	_value = NULL;
 	return USENET_SUCCESS;
 }
