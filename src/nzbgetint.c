@@ -221,7 +221,7 @@ int usenet_nzb_get_history(struct usenet_nzb_filellist** f_list, size_t* num)
 	xmlNodePtr _child_node = NULL;
 	xmlNodePtr _sibling_node = NULL;
 
-	char* _rpc_args[] = {"False"};
+	char* _rpc_args[] = {"True"};
 
 	_stat = usenet_uxmlrpc_call(USENET_NZBGET_HISTORY_METHOD, _rpc_args, 1, &_xmldoc);
 	if(_stat != USENET_SUCCESS) {
@@ -317,9 +317,10 @@ int usenet_nzb_delete_item_from_history(int* ids, size_t num)
 	die_if_fault_occurred(&env);
 
 	for(_i = 0; _i < num; _i++) {
-		_id = xmlrpc_int_new(&env, ids[num]);
+		_id = xmlrpc_int_new(&env, ids[_i]);
 
 		xmlrpc_array_append_item(&env, _ids, _id);
+		USENET_LOG_MESSAGE_ARGS("adding id for deletion %i", ids[_i]);
 		die_if_fault_occurred(&env);
 		xmlrpc_DECREF(_id);
 	}
