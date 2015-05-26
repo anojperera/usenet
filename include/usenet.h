@@ -75,11 +75,17 @@ struct gapi_login
 	const char* server_port;		/* server port */
 	const char* nzburl;				/* search url */
 	const char* mac_addr;			/* mac address of the client */
+	const char* ssh_user;			/* ssh user name */
+	const char* rsa_public_key;		/* public key path */
+	const char* rsa_private_key;	/* private key path */
+	const char* ssh_port;			/* ssh port number */
+
 	int scan_freq;					/* frequency scan the instructions */
     int exp;						/* expiry time since unix start */
     int iat;						/* start time since unix start time */
 	int svr_wait_time;				/* default server wait time */
 	int nzb_fsize_threshold;		/* file size tolerance */
+
 	config_t _config;
 };
 
