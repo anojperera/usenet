@@ -17,10 +17,13 @@
 
 
 #include <libconfig.h>
+
+#include "thcon.h"
 #include "usenet.h"
 
 #define USENET_SETTINGS_FILE "../config/usenet.cfg"
 #define USENET_PROC_PATH "/proc"
+#define USENET_SCP_BUF_SZ 1024
 
 #define USENET_GET_SETTING_STRING(name)								\
     if((_setting = config_lookup(&login->_config, #name)) != NULL)	\
@@ -69,9 +72,14 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(server_port);
 	USENET_GET_SETTING_STRING(nzburl);
 	USENET_GET_SETTING_STRING(mac_addr);
+	USENET_GET_SETTING_STRING(ssh_user);
+	USENET_GET_SETTING_STRING(rsa_public_key);
+	USENET_GET_SETTING_STRING(rsa_private_key);
+	USENET_GET_SETTING_STRING(ssh_port);
 	USENET_GET_SETTING_INT(scan_freq);
 	USENET_GET_SETTING_INT(svr_wait_time);
 	USENET_GET_SETTING_INT(nzb_fsize_threshold);
+
     return USENET_SUCCESS;
 }
 
@@ -141,7 +149,7 @@ int usenet_read_file(const char* path, char** buff, size_t* sz)
 	int _fd = 0;
 	char* _err_str = NULL;
 	off_t _size = 0;
-	struct stat _fstat = {};
+	struct stat _fstat = {0};
 	int _err = USENET_SUCCESS;
 
 	/* check arguments */
@@ -581,6 +589,152 @@ int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf,
 	return USENET_SUCCESS;
 }
 
+/* scp the file from source to the destination */
+int usenet_scp_file(struct gapi_login* config, const char* source, const char* target)
+{
+	thcon _thcon;											/* connection object */
+	int _sock = -1, _fd = -1, _nread = 0, _rc = 0
+	int _ret = USENET_ERROR;
+	char _buf[USENET_SCP_BUF_SZ] = {0};						/* read buffer */
+	char* _w_ptr = NULL;									/* pointer to the buffer writing to channel */
+
+	struct stat _fstat = {0};
+
+    LIBSSH2_SESSION *_session = NULL;
+    LIBSSH2_CHANNEL *_channel = NULL;
+
+	/* iniialise the connection object */
+	USENET_LOG_MESSAGE("creating connection object");
+	thcon_init(&_thcon, thcon_mode_client);
+
+	/* set destination and port address */
+	thcon_set_server_name(&_thcon, config->server_name);
+	thcon_set_port_name(&_thcon, config->ssh_port);
+
+	/* create a raw socket */
+	_sock = thcon_create_raw_sock(&_thcon);
+	if(_sock < 0) {
+		USENET_LOG_MESSAGE("unable to create a raw socket for the scp");
+		goto cleanup;
+	}
+
+	/* create a new ssh session */
+	USENET_LOG_MESSAGE("initialising ssh session");
+	_session = libssh2_session_init();
+	if(!_session) {
+		USENET_LOG_MESSAGE("unable to create ssh session");
+		goto cleanup;
+	}
+
+	/* start a handshake */
+	USENET_LOG_MESSAGE("ssh handshake");
+	if(libssh2_session_handshake(_session, _sock)) {
+		USENET_LOG_MESSAGE("ssh handshake failed");
+		goto cleanup;
+	}
+
+	/* authenticate using public key */
+	USENET_LOG_MESSAGE("authenticating using public/private");
+	if(libssh2_userauth_publickey_fromfile(_session,
+										   config->ssh_user,
+										   config->rsa_public_key,
+										   config->rsa_private_key,
+										   NULL)) {
+		USENET_LOG_MESSAGE("unable to authenticate connection");
+		goto cleanup;
+	}
+
+	USENET_LOG_MESSAGE("ssh connection authenticated successfully");
+
+	/* open file and get stats */
+	USENET_LOG_MESSAGE("openning source file and getting stats");
+	_fd = open(source, O_RDONLY);
+
+	if(_fd < 1) {
+		USENET_LOG_MESSAGE_ARGS("unable to open the file %s", source);
+		goto cleanup;
+	}
+
+	fstat(_fd, &_fstat);
+	_channel = libssh2_scp_send(_session,
+								target,
+								_fstat.st_mode & 0777,
+								(unsigned long) _fstat.st_size);
+	/* errors have occured */
+	if(!_channel) {
+		USENET_LOG_MESSAGE("errors occured while creating a channel");
+		goto cleanup;
+	}
+
+	/* read chunk at a time and write to the channel */
+	do {
+		_nread = read(_fd, &_buf, USENET_SCP_BUF_SZ);
+
+		/* break from loop if the read size less or equal to zero */
+		if(_nread <= 0)
+			break;
+
+		_w_ptr = _buf;
+
+		do {
+
+			/* write all of the read bytes until done */
+			_rc = libssh2_channel_write(_channel, _w_ptr, _nread);
+			if(_rc < 0) {
+				USENET_LOG_MESSAGE("errors occured writing to channel");
+				goto cleanup;
+			}
+
+			/*
+			 * increment write position of the buffer and decrement the number of
+			 * bytes written from the total read.
+			 */
+			_w_ptr += _rc;
+			_nread -= _rc;
+
+		} while(_nread)
+
+	}while(1);
+
+	/* send ending characters */
+	libssh2_channel_send_eof(_channel);
+
+	libssh2_channel_wait_eof(_channel);
+
+	libssh2_channel_wait_close(_channel);
+
+	_ret = USENET_SUCCESS;
+
+cleanup:
+
+	USENET_LOG_MESSAGE("ssh cleanup...");
+
+	/* free the channel */
+	if(_channel)
+		libssh2_channel_free(_channel);
+	_channel = NULL;
+
+	/* close the open file descriptor */
+	if(_fd > 0)
+		close(_fd);
+
+	/* close the session */
+	if(session) {
+		libssh2_session_disconnect(_session, "ssh session shutdown");
+		libssh2_session_free(_session);
+	}
+
+	/* close descriptor if was open */
+	if(_sock > 0)
+		close(_sock);
+
+
+	/* delete connection object */
+	thcon_delete(&_thcon);
+	return _ret;
+}
+
+
 /* helper method for renaming the file */
 static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list, const char* file_path)
 {
@@ -600,7 +754,7 @@ static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list,
 	USENET_LOG_MESSAGE_ARGS("renaming file %s to %s", file_path, _rfname);
 
 	/* we only do a rename if a original and the new paths are different */
-	if(!strcmp(file_path, _rfname) || !rename(file_path, _rfname)) {
+	if(strcmp(file_path, _rfname) || rename(file_path, _rfname)) {
 		/* errors have occured */
 		USENET_LOG_MESSAGE_ARGS("errors occured while renaming the file %s", strerror(errno));
 		_ret = USENET_ERROR;
