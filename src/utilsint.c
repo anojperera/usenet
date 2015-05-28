@@ -23,6 +23,7 @@
 
 #define USENET_SETTINGS_FILE "../config/usenet.cfg"
 #define USENET_PROC_PATH "/proc"
+#define USENET_DESTINATION_PATH_SZ 512
 #define USENET_SCP_BUF_SZ 1024
 
 #define USENET_GET_SETTING_STRING(name)								\
@@ -76,6 +77,7 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(rsa_public_key);
 	USENET_GET_SETTING_STRING(rsa_private_key);
 	USENET_GET_SETTING_STRING(ssh_port);
+	USENET_GET_SETTING_STRING(destination_folder);
 	USENET_GET_SETTING_INT(scan_freq);
 	USENET_GET_SETTING_INT(svr_wait_time);
 	USENET_GET_SETTING_INT(nzb_fsize_threshold);
@@ -589,6 +591,46 @@ int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf,
 	return USENET_SUCCESS;
 }
 
+/* Create destination path */
+int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* fname, char** dest, size_t* dest_sz)
+{
+	char _buf[USENET_DESTINATION_PATH_SZ] = {0};
+	char _fname_buf[USENET_DESTINATION_PATH_SZ] = {0};
+
+
+	char* _end_pos = fname + strlen(fname);
+
+	USENET_LOG_MESSAGE("constructing destination path");
+	/* find the first occurence of an under score from the end */
+	do {
+		if(*_itr == USENET_USCORE_CHAR) {
+			_end_pos = _itr;
+			break;
+		}
+
+		_itr--;
+	}while(_itr != fname);
+
+	/* if _end_pos is still NULL we need to exit here */
+	if(_end_pos == NULL) {
+		USENET_LOG_MESSAGE("unable to construct the destination folder name from file name");
+		return USENET_ERROR;
+	}
+
+	/* copy the memory of the file name  without season and episode numbers */
+	memcpy(_fname_buf, fname, _end_pos - fname);
+
+	/* create the full path */
+	sprintf(_buf, "%s@%s:%s%s", config->ssh_user, server_name, destination_folder, _fname_buf);
+
+	/* get the actual size of the string and copy the file */
+	*dest_sz = strlen(_buf);
+	*dest = (char*) malloc(sizeof(char) * ((*dest_sz) + 1));
+	strcpy(*dest, _buf);
+
+	return USENET_SUCCESS;
+}
+
 /* scp the file from source to the destination */
 int usenet_scp_file(struct gapi_login* config, const char* source, const char* target)
 {
@@ -760,8 +802,8 @@ static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list,
 		_ret = USENET_ERROR;
 	}
 
-	free(_rfname);
-	_rfname = NULL;
+	/* set the new file name pointer to the list item */
+	list->_u_r_fpath = _rfname;
 
 	return _ret;
 }
