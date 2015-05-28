@@ -57,6 +57,7 @@ static int _echo_update_list(struct uclient* cli);
 static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg);
 static int _terminate_client(struct uclient* cli);
 static int _check_nzb_list(struct uclient* cli);
+static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -547,4 +548,13 @@ static int _check_nzb_list(struct uclient* cli)
 	free(_list);
 
 	return USENET_SUCCESS;
+}
+
+/*
+ * Method for copying the file to the remote destination.
+ * This uses a forked process and send message to the remote server on completion.
+ */
+static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list)
+{
+
 }
