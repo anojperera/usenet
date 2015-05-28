@@ -26,18 +26,6 @@
 
 #define USENET_NZBGET_NUM_GROUPS 10
 
-#define USENET_NZBGET_INIT_LIST(list)			\
-	(list)->_nzb_id = 0;						\
-	(list)->_file_size = 0;						\
-	(list)->_remaining_size = 0;				\
-	(list)->_active_downloads = 0;				\
-	(list)->_nzb_file_name = NULL;				\
-	(list)->_nzb_name = NULL;					\
-	(list)->_dest_dir = NULL;					\
-	(list)->_final_dir = NULL;					\
-	(list)->_status = NULL;						\
-	(list)->_u_std_fname = NULL
-
 #define USENET_NZBGET_COPY_ELEMENT(element, value)				\
 	(element) = (char*) malloc(strlen((const char*) (value)) +1);	\
 	strcpy((element), (const char*) (value))
