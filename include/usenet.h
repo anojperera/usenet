@@ -118,8 +118,12 @@ struct usenet_nzb_filellist
 	char* _status;
 
 	char* _u_std_fname;
+	char* _u_r_fpath;									/* full path of the renamed file */
 };
 
+/*
+ * Helper macros for free the elements.
+ */
 #define USENET_FILELIST_FREE(item)				\
 	if((item)->_nzb_file_name)					\
 		free((item)->_nzb_file_name);			\
@@ -133,13 +137,29 @@ struct usenet_nzb_filellist
 		free((item)->_status);					\
 	if((item)->_u_std_fname)					\
 		free((item)->_u_std_fname);				\
+	if((item)->_u_r_fpath)						\
+		free((item)->_u_r_fpath);				\
 	(item)->_nzb_file_name = NULL;				\
 	(item)->_nzb_name = NULL;					\
 	(item)->_dest_dir = NULL;					\
 	(item)->_final_dir = NULL;					\
 	(item)->_status = NULL;						\
-	(item)->_u_std_fname = NULL
+	(item)->_u_std_fname = NULL;				\
+	(item)->_u_r_fpath = NULL
 
+/* initialise the elements */
+#define USENET_NZBGET_INIT_LIST(list)			\
+	(list)->_nzb_id = 0;						\
+	(list)->_file_size = 0;						\
+	(list)->_remaining_size = 0;				\
+	(list)->_active_downloads = 0;				\
+	(list)->_nzb_file_name = NULL;				\
+	(list)->_nzb_name = NULL;					\
+	(list)->_dest_dir = NULL;					\
+	(list)->_final_dir = NULL;					\
+	(list)->_status = NULL;						\
+	(list)->_u_std_fname = NULL;				\
+	(list)->_u_r_fpath = NULL
 
 int usenet_utils_load_config(struct gapi_login* login);
 int usenet_utils_destroy_config(struct gapi_login* login);
