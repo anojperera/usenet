@@ -54,7 +54,7 @@
 #define USENET_DEFAULT_SAVE_PATH "/home/pyrus/Downloads/nzb/"
 
 
-static const char* USENET_URL = "http://nzbclub.com/nzbfeeds.aspx?q=";
+static const char* USENET_URL = "http://nzbclub.com/nzbrss.aspx?q=";
 
 struct search_content
 {
