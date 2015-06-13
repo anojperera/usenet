@@ -54,8 +54,9 @@ static int _msg_handler(struct uclient* cli, struct usenet_message* msg);
 static int _action_json(struct uclient* cli, const char* json_msg);
 static int _echo_daemon_check_to_parent(struct uclient* cli);
 static int _echo_update_list(struct uclient* cli);
+static int _echo_scp_complete(struct uclient* cli);
 static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg);
-static int _terminate_client(struct uclient* cli);
+static int _terminate_client(struct uclient* cli, pid_t child);
 static int _check_nzb_list(struct uclient* cli);
 static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list);
 
@@ -207,7 +208,7 @@ int pulse_client(struct uclient* cli)
 		return 0;
 
 	/* terminate the child process if running */
-	_terminate_client(cli);
+	_terminate_client(cli, -1);
 
 	/* if probe flag was set, update server to broadcast */
 	if(cli->_probe_nzb_flg)
@@ -407,8 +408,9 @@ static int _echo_daemon_check_to_parent(struct uclient* cli)
 static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg)
 {
 	int _num = 0;
-	jsmntok_t* _tok = NULL, *_rpc_tok = NULL;;
-	char* _rpc_val = NULL;
+	jsmntok_t* _tok = NULL, *_rpc_tok = NULL, *_arg_tok = NULL;
+	char* _rpc_val = NULL, _arg_val = NULL;
+	pid_t _child_pid = -1;
 
 	int _ret = USENET_SUCCESS;
 
@@ -438,9 +440,35 @@ static int _handle_unknown_message(struct uclient* cli, struct usenet_message* m
 		USENET_LOG_MESSAGE("echo message received to update the nzbget list");
 		usenet_nzb_scan();
 	}
+	else if(strcmp(_rpc_val, USENET_JSON_FN_3) == 0) {
+		/*
+		 * The child process is indicating the scp operation is complete.
+		 * Get the array value.
+		 */
+		if(usjson_get_token(msg->msg_body, _tok, _num, USENET_JSON_ARG_HEADER, &_arg_val, &_arg_tok) != USENET_SUCCESS) {
+			_ret = USENET_ERROR;
+			USENET_LOG_MESSAGE("unable to parse json to get the array value");
+			goto clean_up;
+		}
 
-	USENET_LOG_MESSAGE("cleaning up the allocated memory");
+		_child_pid = atoi(_arg_val);
+
+
+		/* free the memory allocated by the parser */
+		if(_arg_tok)
+			free(_arg_tok);
+
+		if(_arg_val)
+			free(_arg_val);
+
+		_arg_tok = NULL;
+		_arg_val = NULL;
+
+	}
+
+
 clean_up:
+	USENET_LOG_MESSAGE("cleaning up the allocated memory");
 	/* free allocated resources */
 	if(_tok)
 		free(_tok);
@@ -451,10 +479,14 @@ clean_up:
 	return _ret;
 }
 
-
-static int _terminate_client(struct uclient* cli)
+/* Kills the child process, child argument takes priority */
+static int _terminate_client(struct uclient* cli, pid_t child)
 {
-	if(cli->_child_pid > 0) {
+	if(child > 0) {
+		USENET_LOG_MESSAGE_ARGS("terminating child process: %i", child);
+		kill(child, SIGKILL);
+	}
+	else if(cli->_child_pid > 0) {
 		USENET_LOG_MESSAGE_ARGS("terminating child process: %i", cli->_child_pid);
 		kill(cli->_child_pid, SIGKILL);
 		cli->_child_pid = -1;
@@ -536,8 +568,16 @@ static int _check_nzb_list(struct uclient* cli)
 			continue;
 
 		/* rename the file to the new one */
-		if(usenet_utils_rename_file(&_list[_i], cli->_login.nzb_fsize_threshold) == USENET_SUCCESS)
+		if(usenet_utils_rename_file(&_list[_i], cli->_login.nzb_fsize_threshold) == USENET_SUCCESS) {
 			usenet_nzb_delete_item_from_history(&_list[_i]._nzb_id, 1);
+
+			/*
+			 * Copy the file in another process and indicate to the server once its finished.
+			 * The message shall be relayed back to the client, which will terminate the forked
+			 * process.
+			 */
+			_copy_file(_cli, &_list[_i]);
+		}
 	}
 
 	/* free the list and return */
@@ -556,5 +596,62 @@ static int _check_nzb_list(struct uclient* cli)
  */
 static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list)
 {
+	int _stat = USENET_SUCCESS;
+	char* _fname = NULL;
+	size_t _len = 0;
 
+	/* fork the process */
+	pid_t _pid = 0;
+
+	/* fork the process */
+	USENET_LOG_MESSAGE("forking the process to copy the file to the remote server");
+	_pid = fork();
+
+	/* if this is the parent process exit here */
+	if(_pid != 0)
+		return USENET_SUCCESS;
+
+	/* construct the destination path */
+	_stat = usenet_utils_create_destinatin_path(&cli->_login, list->_u_std_fname, &_fname, &_len);
+	if(_stat == USENET_ERROR) {
+		USENET_LOG_MESSAGE("errors occured while creating destination path");
+		goto cleanup;
+	}
+
+	/* scp the file */
+	usenet_scp_file(&cli->_login, list->_u_r_fpath ,_fname);
+
+	/* echo the message to the server to indicate complete */
+	_echo_scp_complete(cli);
+
+cleanup:
+	exit(0);
+}
+
+/*
+ * Indicate to the server that the scp operation is complete.
+ * this is relayed back to the client.
+ */
+static int _echo_scp_complete(struct uclient* cli)
+{
+	pid_t _pid;
+	struct usenet_message _msg;
+
+	/* get the pid */
+	_pid = getpid();
+
+	/* format the message */
+	_msg.ins = USENET_REQUEST_BROADCAST;
+	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": [%i]}",
+			USENET_JSON_FN_HEADER,
+			USENET_JSON_FN_3,
+			USENET_JSON_ARG_HEADER,
+			_pid);
+
+
+	USENET_LOG_MESSAGE("broadcasting message scp complete");
+
+	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
+
+	return USENET_SUCCESS;
 }
