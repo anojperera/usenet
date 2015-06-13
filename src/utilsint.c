@@ -17,7 +17,7 @@
 
 
 #include <libconfig.h>
-
+#include <libssh2.h>
 #include "thcon.h"
 #include "usenet.h"
 
@@ -598,7 +598,8 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* f
 	char _fname_buf[USENET_DESTINATION_PATH_SZ] = {0};
 
 
-	char* _end_pos = fname + strlen(fname);
+	char* _end_pos = (char*) fname + strlen(fname);
+	char* _itr = _end_pos;
 
 	USENET_LOG_MESSAGE("constructing destination path");
 	/* find the first occurence of an under score from the end */
@@ -621,7 +622,7 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* f
 	memcpy(_fname_buf, fname, _end_pos - fname);
 
 	/* create the full path */
-	sprintf(_buf, "%s@%s:%s%s", config->ssh_user, server_name, destination_folder, _fname_buf);
+	sprintf(_buf, "%s@%s:%s%s", config->ssh_user, config->server_name, config->destination_folder, _fname_buf);
 
 	/* get the actual size of the string and copy the file */
 	*dest_sz = strlen(_buf);
@@ -635,7 +636,7 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* f
 int usenet_scp_file(struct gapi_login* config, const char* source, const char* target)
 {
 	thcon _thcon;											/* connection object */
-	int _sock = -1, _fd = -1, _nread = 0, _rc = 0
+	int _sock = -1, _fd = -1, _nread = 0, _rc = 0;
 	int _ret = USENET_ERROR;
 	char _buf[USENET_SCP_BUF_SZ] = {0};						/* read buffer */
 	char* _w_ptr = NULL;									/* pointer to the buffer writing to channel */
@@ -734,7 +735,7 @@ int usenet_scp_file(struct gapi_login* config, const char* source, const char* t
 			_w_ptr += _rc;
 			_nread -= _rc;
 
-		} while(_nread)
+		} while(_nread);
 
 	}while(1);
 
@@ -743,7 +744,7 @@ int usenet_scp_file(struct gapi_login* config, const char* source, const char* t
 
 	libssh2_channel_wait_eof(_channel);
 
-	libssh2_channel_wait_close(_channel);
+	libssh2_channel_wait_closed(_channel);
 
 	_ret = USENET_SUCCESS;
 
@@ -761,7 +762,7 @@ cleanup:
 		close(_fd);
 
 	/* close the session */
-	if(session) {
+	if(_session) {
 		libssh2_session_disconnect(_session, "ssh session shutdown");
 		libssh2_session_free(_session);
 	}
