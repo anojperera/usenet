@@ -54,6 +54,8 @@
 
 #define USENET_JSON_FN_1 "usenet_complete"
 #define USENET_JSON_FN_2 "usenet_update_list"
+#define USENET_JSON_FN_3 "usenet_scp_complete"
+
 
 #define USENET_NZB_SUCCESS "SUCCESS/UNPACK"
 
@@ -79,6 +81,7 @@ struct gapi_login
 	const char* rsa_public_key;		/* public key path */
 	const char* rsa_private_key;	/* private key path */
 	const char* ssh_port;			/* ssh port number */
+	const char* destination_folder;	/* destination folder */
 
 	int scan_freq;					/* frequency scan the instructions */
     int exp;						/* expiry time since unix start */
@@ -215,6 +218,10 @@ int usenet_utils_escape_blanks(char* fname, size_t sz);
  */
 int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf, size_t* sz);
 
+/*
+ * Helper method for creating destination path
+ */
+int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* fname, char** dest, size_t* dest_sz);
 
 /*
  * JSON Parser helper methods
@@ -248,6 +255,8 @@ int usenet_uxmlrpc_get_member(xmlNodePtr member_node, const char* name, char** v
 #define USENET_REQUEST_FUNCTION 0x05
 #define USENET_REQUEST_PULSE 0x06
 #define USENET_REQUEST_BROADCAST 0x07
+#define USENET_REQUEST_PROGRESS 0x08
+
 
 /* helper method for logging */
 static inline __attribute__ ((always_inline)) void _usenet_log_message(const char* msg, const char* fname, int line)
