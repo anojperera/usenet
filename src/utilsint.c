@@ -592,13 +592,15 @@ int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf,
 }
 
 /* Create destination path */
-int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* fname, char** dest, size_t* dest_sz)
+int usenet_utils_create_destinatin_path(struct gapi_login* config, struct usenet_nzb_filellist* list, char** dest, size_t* dest_sz)
 {
 	char _buf[USENET_DESTINATION_PATH_SZ] = {0};
 	char _fname_buf[USENET_DESTINATION_PATH_SZ] = {0};
 
+	const char* _fname = list->_u_std_fname;
+	const char* _ext = _usenet_utils_get_ext(list->_u_r_fpath);
 
-	char* _end_pos = (char*) fname + strlen(fname);
+	char* _end_pos = (char*) _fname + strlen(_fname);
 	char* _itr = _end_pos;
 
 	USENET_LOG_MESSAGE("constructing destination path");
@@ -610,7 +612,7 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* f
 		}
 
 		_itr--;
-	}while(_itr != fname);
+	}while(_itr != _fname);
 
 	/* if _end_pos is still NULL we need to exit here */
 	if(_end_pos == NULL) {
@@ -619,10 +621,14 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* f
 	}
 
 	/* copy the memory of the file name  without season and episode numbers */
-	memcpy(_fname_buf, fname, _end_pos - fname);
+	memcpy(_fname_buf, _fname, _end_pos - _fname);
 
 	/* create the full path */
-	sprintf(_buf, "%s@%s:%s%s", config->ssh_user, config->server_name, config->destination_folder, _fname_buf);
+	sprintf(_buf, "%s%s/%s%s",
+			config->destination_folder,
+			_fname_buf,
+			_fname,
+			_ext);
 
 	/* get the actual size of the string and copy the file */
 	*dest_sz = strlen(_buf);
@@ -633,7 +639,7 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* f
 }
 
 /* scp the file from source to the destination */
-int usenet_scp_file(struct gapi_login* config, const char* source, const char* target)
+int usenet_utils_scp_file(struct gapi_login* config, const char* source, const char* target)
 {
 	thcon _thcon;											/* connection object */
 	int _sock = -1, _fd = -1, _nread = 0, _rc = 0;
@@ -651,12 +657,13 @@ int usenet_scp_file(struct gapi_login* config, const char* source, const char* t
 	thcon_init(&_thcon, thcon_mode_client);
 
 	/* set destination and port address */
-	thcon_set_server_name(&_thcon, config->server_name);
+	/* thcon_set_server_name(&_thcon, config->server_name); */
+	thcon_set_server_name(&_thcon, "192.168.0.6");
 	thcon_set_port_name(&_thcon, config->ssh_port);
 
 	/* create a raw socket */
 	_sock = thcon_create_raw_sock(&_thcon);
-	if(_sock < 0) {
+	if(_sock <= 0) {
 		USENET_LOG_MESSAGE("unable to create a raw socket for the scp");
 		goto cleanup;
 	}
@@ -699,6 +706,7 @@ int usenet_scp_file(struct gapi_login* config, const char* source, const char* t
 	}
 
 	fstat(_fd, &_fstat);
+	USENET_LOG_MESSAGE_ARGS("creating channel for target %s", target);
 	_channel = libssh2_scp_send(_session,
 								target,
 								_fstat.st_mode & 0777,
@@ -786,6 +794,7 @@ static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list,
 	const char* _ext = NULL;
 	int _ret = USENET_SUCCESS;
 
+
 	/* get file extension */
 	_ext = _usenet_utils_get_ext(file_path);
 
@@ -797,10 +806,10 @@ static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list,
 	USENET_LOG_MESSAGE_ARGS("renaming file %s to %s", file_path, _rfname);
 
 	/* we only do a rename if a original and the new paths are different */
-	if(strcmp(file_path, _rfname) || rename(file_path, _rfname)) {
+	_ret = strcmp(file_path, _rfname);
+	if(_ret && rename(file_path, _rfname)) {
 		/* errors have occured */
-		USENET_LOG_MESSAGE_ARGS("errors occured while renaming the file %s", strerror(errno));
-		_ret = USENET_ERROR;
+		USENET_LOG_MESSAGE_ARGS("errors occured while renaming the file with error %i - %s", errno, strerror(errno));
 	}
 
 	/* set the new file name pointer to the list item */
