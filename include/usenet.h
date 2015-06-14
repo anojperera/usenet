@@ -55,6 +55,7 @@
 #define USENET_JSON_FN_1 "usenet_complete"
 #define USENET_JSON_FN_2 "usenet_update_list"
 #define USENET_JSON_FN_3 "usenet_scp_complete"
+#define USENET_JSON_FN_4 "usenet_progress"
 
 
 #define USENET_NZB_SUCCESS "SUCCESS/UNPACK"
@@ -221,7 +222,12 @@ int usenet_utils_cons_new_fname(const char* dir, const char* fname, char** nbuf,
 /*
  * Helper method for creating destination path
  */
-int usenet_utils_create_destinatin_path(struct gapi_login* config, const char* fname, char** dest, size_t* dest_sz);
+int usenet_utils_create_destinatin_path(struct gapi_login* config, struct usenet_nzb_filellist* list, char** dest, size_t* dest_sz);
+
+/*
+ * SCP method
+ */
+int usenet_utils_scp_file(struct gapi_login* config, const char* source, const char* target);
 
 /*
  * JSON Parser helper methods
