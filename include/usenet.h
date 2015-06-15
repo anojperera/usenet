@@ -46,6 +46,7 @@
 #define USENET_PLUS_CHAR 43
 #define USENET_USCORE_CHAR 95
 #define USENET_FULLSTOP_CHAR 46
+#define USENET_ASSIGN_CHAR 61
 
 #define USENET_BLANKSPACE_CHAR USENET_SPACE_CHAR
 
@@ -227,8 +228,11 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, struct usenet
 /*
  * SCP method
  */
-int usenet_utils_scp_file(struct gapi_login* config, const char* source, const char* target);
-
+int usenet_utils_scp_file(struct gapi_login* config,
+						  const char* source,
+						  const char* target,
+						  int (*prog)(void*, float),
+						  void* ext_obj);
 /*
  * JSON Parser helper methods
  */
