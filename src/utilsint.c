@@ -639,10 +639,14 @@ int usenet_utils_create_destinatin_path(struct gapi_login* config, struct usenet
 }
 
 /* scp the file from source to the destination */
-int usenet_utils_scp_file(struct gapi_login* config, const char* source, const char* target)
+int usenet_utils_scp_file(struct gapi_login* config,
+						  const char* source,
+						  const char* target,
+						  int (*prog)(void*, float),
+						  void* ext_obj)
 {
 	thcon _thcon;											/* connection object */
-	int _sock = -1, _fd = -1, _nread = 0, _rc = 0;
+	int _sock = -1, _fd = -1, _nread = 0, _rc = 0, _prog = 0;
 	int _ret = USENET_ERROR;
 	char _buf[USENET_SCP_BUF_SZ] = {0};						/* read buffer */
 	char* _w_ptr = NULL;									/* pointer to the buffer writing to channel */
@@ -727,6 +731,9 @@ int usenet_utils_scp_file(struct gapi_login* config, const char* source, const c
 
 		_w_ptr = _buf;
 
+		/* handle progress */
+		_prog += _nread;
+
 		do {
 
 			/* write all of the read bytes until done */
@@ -744,6 +751,10 @@ int usenet_utils_scp_file(struct gapi_login* config, const char* source, const c
 			_nread -= _rc;
 
 		} while(_nread);
+
+		/* if the callback function is supplied with this we call to indicate progress */
+		if(prog != NULL)
+			prog(ext_obj, (_prog / _fstat.st_size));
 
 	}while(1);
 

@@ -16,6 +16,8 @@
 #define USENET_CLIENT_MSG_PULSE_GAP 5
 #define USENET_CLIENT_NZBGET_CLIENT "nzbget"
 
+#define USENET_CLIENT_PROGRESS_MAX 40
+
 /* struct to encapsulate server component */
 struct uclient
 {
@@ -47,6 +49,7 @@ struct uclient
 
 static int _data_receive_callback(void* self, void* data, size_t sz);
 static void _signal_hanlder(int signal);
+static int _progress_callback(void* self, float progress);
 
 static inline __attribute__ ((always_inline)) int _default_response(struct uclient* client, struct usenet_message* msg);
 static inline __attribute__ ((always_inline)) int _send_pulse(struct uclient* client);
@@ -61,6 +64,8 @@ static int _terminate_helper(struct uclient* cli, const char* msg, jsmntok_t* to
 static int _terminate_client(struct uclient* cli, pid_t child);
 static int _check_nzb_list(struct uclient* cli);
 static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list);
+
+static int _progress_handler(struct uclient* cli, struct usenet_message* msg, jsmntok_t* tok);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -462,12 +467,31 @@ static int _handle_unknown_message(struct uclient* cli, struct usenet_message* m
 			 * kill the process with process id
 			 */
 			_terminate_helper(cli, msg->msg_body, _arg_tok);
+
+			/* reset the index */
+			cli->_act_nzb_id = 0;
 			free(_arg_val);
 		}
 
 		_arg_tok = NULL;
 		_arg_val = NULL;
 
+	}
+	else if(strcmp(_rpc_val, USENET_JSON_FN_4) == 0) {
+
+		if(usjson_get_token(msg->msg_body, _tok, _num, USENET_JSON_ARG_HEADER, &_arg_val, &_arg_tok) != USENET_SUCCESS) {
+			_ret = USENET_ERROR;
+			goto clean_up;
+		}
+
+		if(_arg_val) {
+
+			/* write the progress to the screen or log */
+			_progress_handler(cli, msg, _arg_tok);
+
+			free(_arg_val);
+			_arg_val = NULL;
+		}
 	}
 
 
@@ -624,7 +648,11 @@ static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list)
 	/*
 	 * SCP the file if it was successful, remove from list.
 	 */
-	if(usenet_utils_scp_file(&cli->_login, list->_u_r_fpath ,_fname) == USENET_SUCCESS)
+	if(usenet_utils_scp_file(&cli->_login,
+							 list->_u_r_fpath,
+							 _fname,
+							 _progress_callback,
+							 (void*) cli) == USENET_SUCCESS)
 		usenet_nzb_delete_item_from_history(&list->_nzb_id, 1);
 
 	/* echo the message to the server to indicate complete */
@@ -700,6 +728,66 @@ static int _terminate_helper(struct uclient* cli, const char* msg, jsmntok_t* to
 	if(_str_arr._arr != NULL)
 		free(_str_arr._arr);
 	_str_arr._arr = NULL;
+
+	return USENET_SUCCESS;
+}
+
+/*
+ * indicate progress to the server.
+ */
+static int _progress_callback(void* self, float progress)
+{
+	struct usenet_message _msg;
+	struct uclient* _self = NULL;
+
+	if(self == NULL)
+		return USENET_ERROR;
+
+	/* cast the object to uclient */
+	_self = (struct uclient*) self;
+
+	/* format the message */
+	_msg.ins = USENET_REQUEST_BROADCAST;
+	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": [\"%.1f\"]}",
+			USENET_JSON_FN_HEADER,
+			USENET_JSON_FN_4,
+			USENET_JSON_ARG_HEADER,
+			progress);
+
+	thcon_send_info(&_self->_connection, (void*) &_msg, sizeof(struct usenet_message));
+
+	return USENET_SUCCESS;
+}
+
+/* log progress to the screen */
+static int _progress_handler(struct uclient* cli, struct usenet_message* msg, jsmntok_t* tok)
+{
+	int _i = 0, _prog = 0;
+	struct usenet_str_arr _str_arr = {0};
+	char* _prog_disp = NULL;
+
+	/* get the array into struct */
+	if(usjson_get_token_arr_as_str(msg->msg_body, tok, &_str_arr) == USENET_ERROR) {
+		return USENET_ERROR;
+	}
+
+	for(_i = 0; _i < _str_arr._sz; _i++) {
+		if(!_str_arr._arr[_i])
+			continue;
+
+		/* write the progress */
+		_prog = USENET_CLIENT_PROGRESS_MAX * atof(_str_arr._arr[_i]);
+
+		/* allocate memory */
+		_prog_disp = (char*) malloc(sizeof(char) * (USENET_CLIENT_PROGRESS_MAX + 2));
+		memset(_prog_disp, USENET_ASSIGN_CHAR, _prog);
+		sprintf(_prog_disp+_prog, ">");
+		USENET_LOG_MESSAGE(_prog_disp);
+
+		free(_prog_disp);
+		free(_str_arr._arr[_i]);
+		_str_arr._arr[_i] = NULL;
+	}
 
 	return USENET_SUCCESS;
 }
