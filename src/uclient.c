@@ -568,6 +568,7 @@ static int _check_nzb_list(struct uclient* cli)
 {
 	int _i = 0;
 	size_t _list_sz = 0;
+	int _s_flg = 0;													/* flag to indicate success of failure */
 	struct usenet_nzb_filellist* _list = NULL;
 
 	USENET_LOG_MESSAGE_ARGS("found nzbget with pid %i, getting history", cli->_nzbget_pid);
@@ -592,8 +593,12 @@ static int _check_nzb_list(struct uclient* cli)
 		 * If the download was not sucessful or the the nzb id being processed is same as
 		 * this one we continue with the next one.
 		 */
-		if(strcmp(_list[_i]._status, USENET_NZB_SUCCESS) || cli->_act_nzb_id != 0)
+		_s_flg = strcmp(_list[_i]._status, USENET_NZB_SUCCESS);
+		if(_s_flg || cli->_act_nzb_id != 0) {
+			if(_s_flg)
+				usenet_nzb_delete_item_from_history(&_list[_i]._nzb_id, 1);
 			continue;
+		}
 
 		if(cli->_act_nzb_id == 0)
 			cli->_act_nzb_id = _list[_i]._nzb_id;
