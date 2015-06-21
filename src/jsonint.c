@@ -6,23 +6,91 @@
 #include <stdio.h>
 #include <string.h>
 #include <usenet.h>
+#include <sys/time.h>
 
 #include "usenet.h"
 #include "jsmn.h"
 
-#define JSONINT_ALG_KEY "alg"
-#define JSONINT_TYP_KEY "typ"
+#define JSONINT_EXP_EXTRA_TIME 300
+#define JSONINT_HEADER_SIZE 512
 
-#define JSONINT_ALG_VAL "RS256"
-#define JSONINT_TYP_VAL "JWT"
+#define JSONINT_ALG_KEY alg
+#define JSONINT_TYP_KEY typ
 
-int usjson_header_section(struct gapi_login* login, const char* json_string)
+#define JSONINT_ISS_KEY iss
+#define JSONINT_SCOPE_KEY scope
+#define JSONINT_AUD_KEY aud
+#define JSONINT_EXP_KEY exp
+#define JSONINT_IAT_KEY iat
+
+#define JSONINT_AS_STRING(name)					\
+	#name
+
+
+/* Helper methods to get various time values */
+static inline __attribute__ ((always_inline)) int _usjson_get_exp_time(void);
+static inline __attribute__ ((always_inline)) int _usjson_get_iat_time(void);
+
+
+
+int usjson_prepare_jwt(struct gapi_login* login, char** jwt, size_t* size)
 {
+	size_t _header_sz = 0, _claim_sz = 0;
+	char _header[JSONINT_HEADER_SIZE];
+	char _claim[JSONINT_HEADER_SIZE];
+
+	USENET_LOG_MESSAGE("preparing JWT");
+
+	/* get header and claim set */
+	usjson_header_section(login, &_header, &_header_sz);
+	usjson_claim_set_section(login, &_claim, &_claim_sz);
+
+	/* if either header or claim set is not populated we return error */
+	if(!_header_sz > 0 || !_sz > 0) {
+		USENET_LOG_MESSAGE("unable to create JWT");
+		return USENET_ERROR;
+	}
+
+
+
+	return USENET_SUCCESS;
+}
+
+int usjson_header_section(struct gapi_login* login, const char** json_string, size_t* size)
+{
+	USENET_LOG_MESSAGE("preparing header section of JWT");
+	*size = sprintf(*jons_string,
+					"{\"%s\":\"%s\",\"%s\":\"%s\"}",
+					JSONINT_AS_STRING(JSONINT_ALG_KEY),
+					login->JSONINT_ALG_KEY,
+					JSONINT_AS_STRING(JSONINT_TYP_KEY),
+					login->JSONINT_TYP_KEY);
+
     return USENET_SUCCESS;
 }
 
-int usjson_claim_set_section(struct gapi_login* login, const char* json_string)
+int usjson_claim_set_section(struct gapi_login* login, const char** json_string, size_t* size)
 {
+	int _exp_time = 0, _iat_time = 0;
+
+	USENET_LOG_MESSAGE("preparing claimset of JWT");
+
+	/* Helper methods to get expiry and initialial assertion time */
+	_exp_time = _usjson_get_exp_time();
+	_iat_time = _usjson_get_iat_time();
+
+	*size = sprintf(*json_string, "{\"%s\":\"%s\",\"%s\":\"%s\",\"%s\":\"%s\",\"%s\":%i,\"%s\":%i}",
+					JSONINT_AS_STRING(JSONINT_ISS_KEY),
+					login->JSONINT_ISS_KEY,
+					JSONINT_AS_STRING(JSONINT_SCOPE_KEY),
+					login->JSONINT_SCOPE_KEY,
+					JSONINT_AS_STRING(JSONINT_AUD_KEY),
+					login->JSONINT_AUD_KEY,
+					JSONINT_AS_STRING(JSONINT_EXP_KEY),
+					_exp_time,
+					JSONINT_AS_STRING(JSONINT_IAT_KEY),
+					_iat_time);
+
 	return USENET_SUCCESS;
 }
 
@@ -154,3 +222,56 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 	str_arr->_sz = tok->size;
 	return USENET_SUCCESS;
 }
+
+
+static inline __attribute__ ((always_inline)) int _usjson_get_exp_time(void)
+{
+	return _usjson_get_iat_time() + JSONINT_EXP_EXTRA_TIME;
+}
+
+static inline __attribute__ ((always_inline)) int _usjson_get_iat_time(void)
+{
+	struct timeval _tm;
+	gettimeofday(&_tm);
+
+	return _tm.tv_sec;
+}
+
+
+/* #include <openssl/evp.h> */
+/*  #include <openssl/rsa.h> */
+
+/*  EVP_PKEY_CTX *ctx; */
+/*  /\* md is a SHA-256 digest in this example. *\/ */
+/*  unsigned char *md, *sig; */
+/*  size_t mdlen = 32, siglen; */
+/*  EVP_PKEY *signing_key; */
+
+/*  /\* */
+/*   * NB: assumes signing_key and md are set up before the next */
+/*   * step. signing_key must be an RSA private key and md must */
+/*   * point to the SHA-256 digest to be signed. */
+/*   *\/ */
+/*  ctx = EVP_PKEY_CTX_new(signing_key, NULL /\* no engine *\/); */
+/*  if (!ctx) */
+/*         /\* Error occurred *\/ */
+/*  if (EVP_PKEY_sign_init(ctx) <= 0) */
+/*         /\* Error *\/ */
+/*  if (EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING) <= 0) */
+/*         /\* Error *\/ */
+/*  if (EVP_PKEY_CTX_set_signature_md(ctx, EVP_sha256()) <= 0) */
+/*         /\* Error *\/ */
+
+/*  /\* Determine buffer length *\/ */
+/*  if (EVP_PKEY_sign(ctx, NULL, &siglen, md, mdlen) <= 0) */
+/*         /\* Error *\/ */
+
+/*  sig = OPENSSL_malloc(siglen); */
+
+/*  if (!sig) */
+/*         /\* malloc failure *\/ */
+
+/*  if (EVP_PKEY_sign(ctx, sig, &siglen, md, mdlen) <= 0) */
+/*         /\* Error *\/ */
+
+/*  /\* Signature is siglen bytes written to buffer sig *\/ */
