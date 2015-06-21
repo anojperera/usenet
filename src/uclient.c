@@ -59,6 +59,8 @@ static int _action_json(struct uclient* cli, const char* json_msg);
 static int _echo_daemon_check_to_parent(struct uclient* cli);
 static int _echo_update_list(struct uclient* cli);
 static int _echo_scp_complete(struct uclient* cli);
+static int _echo_scp_done(struct uclient* cli);
+
 static int _handle_unknown_message(struct uclient* cli, struct usenet_message* msg);
 static int _terminate_helper(struct uclient* cli, const char* msg, jsmntok_t* tok);
 static int _terminate_client(struct uclient* cli, pid_t child);
@@ -238,7 +240,7 @@ int pulse_client(struct uclient* cli)
 	 */
 	if(cli->_pulse_sent & USENET_PULSE_SENT) {
 		USENET_LOG_MESSAGE("no response from server, raising SIGINT");
-		/* raise(SIGINT); */
+		raise(SIGINT);
 	}
 
 	cli->_ini_wait_flg = 0;
@@ -577,6 +579,10 @@ static int _check_nzb_list(struct uclient* cli)
 	USENET_LOG_MESSAGE("getting history list");
 	usenet_nzb_get_history(&_list, &_list_sz);
 
+	/* if list size is zero let the server we are done */
+	if(_list_sz == 0)
+		_echo_scp_done(cli);
+
 	/* iterate through the list and action */
 	for(_i = 0; _i < _list_sz; _i++) {
 
@@ -793,6 +799,22 @@ static int _progress_handler(struct uclient* cli, struct usenet_message* msg, js
 		free(_str_arr._arr[_i]);
 		_str_arr._arr[_i] = NULL;
 	}
+
+	return USENET_SUCCESS;
+}
+
+static int _echo_scp_done(struct uclient* cli)
+{
+	struct usenet_message _msg;
+
+	/* format the message */
+	_msg.ins = USENET_REQUEST_BROADCAST;
+	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}",
+			USENET_JSON_FN_HEADER,
+			USENET_JSON_FN_5,
+			USENET_JSON_ARG_HEADER);
+
+	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
 
 	return USENET_SUCCESS;
 }
