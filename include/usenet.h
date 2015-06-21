@@ -57,6 +57,7 @@
 #define USENET_JSON_FN_2 "usenet_update_list"
 #define USENET_JSON_FN_3 "usenet_scp_complete"
 #define USENET_JSON_FN_4 "usenet_progress"
+#define USENET_JSON_FN_5 "usenet_done"
 
 
 #define USENET_NZB_SUCCESS "SUCCESS/UNPACK"
