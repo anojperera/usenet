@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
+#include <time.h>
 #include <gqueue.h>
 #include "usenet.h"
 #include "thcon.h"
@@ -33,6 +34,8 @@ struct uclient
 	volatile unsigned int _act_ix;								/* index for the action to be taken */
 	volatile unsigned int _probe_nzb_flg;						/* flag to indicate probe nzbget */
 	volatile int _act_nzb_id;									/* store the NZB ID here to prevent rename interupted */
+
+	time_t _cp_prog_time;										/* last recorded progress time */
 
 	pid_t _child_pid;											/* child process ID */
 	pid_t _nzbget_pid;											/* nzbget process ID */
@@ -163,6 +166,13 @@ int init_client(struct uclient* cli)
 	cli->_child_pid = -1;
 	cli->_nzbget_pid = -1;
 	cli->_act_nzb_id = 0;
+
+	/*
+	 * Initialise the progress clock to now.
+	 * this shall be checked every time the callback handler is called.
+	 * only after a diff will the progress update sent to the server.
+	 */
+	time(&cli->_cp_prog_time);
 
 	/* initialise thread */
 
@@ -756,6 +766,13 @@ static int _progress_callback(void* self, float progress)
 
 	/* cast the object to uclient */
 	_self = (struct uclient*) self;
+
+	/* compare the times */
+	if(difftime(_self->_cp_prog_time, time(NULL)) < _self->_login.progress_update_interval)
+		return USENET_SUCCESS;
+
+	/* set the current time */
+	time(&_self->_cp_prog_time);
 
 	/* format the message */
 	_msg.ins = USENET_REQUEST_BROADCAST;
