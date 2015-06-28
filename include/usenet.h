@@ -91,6 +91,7 @@ struct gapi_login
     int iat;						/* start time since unix start time */
 	int svr_wait_time;				/* default server wait time */
 	int nzb_fsize_threshold;		/* file size tolerance */
+	int progress_update_interval;	/* progress update interval */
 
 	config_t _config;
 };
