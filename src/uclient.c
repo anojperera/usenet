@@ -22,6 +22,7 @@
 /* struct to encapsulate server component */
 struct uclient
 {
+	int _log_fd;												/* log file descriptor */
 	volatile sig_atomic_t _init_flg;							/* flag to indicate initialised struct */
 
 	/*
@@ -71,6 +72,7 @@ static int _check_nzb_list(struct uclient* cli);
 static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list);
 
 static int _progress_handler(struct uclient* cli, struct usenet_message* msg, jsmntok_t* tok);
+static int _create_log_file(struct uclient* cli);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -116,6 +118,7 @@ int init_client(struct uclient* cli)
 	int status = 0;
 	cli->_server_name = NULL;
 	cli->_server_port = NULL;
+	cli->_log_fd = -1;
 
 	memset(cli, 0, sizeof(struct uclient));
 
@@ -124,6 +127,9 @@ int init_client(struct uclient* cli)
 		USENET_LOG_MESSAGE("unable to read the configuration object");
 		return USENET_ERROR;
 	}
+
+	/* Create the log file and log it */
+	_create_log_file(cli);
 
 	/* set the server port and name to local */
 	USENET_LOG_MESSAGE("setting server port and name to local from config file");
@@ -672,7 +678,7 @@ static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list)
 	if(usenet_utils_scp_file(&cli->_login,
 							 list->_u_r_fpath,
 							 _fname,
-							 _progress_callback,
+							 NULL,
 							 (void*) cli) == USENET_SUCCESS)
 		usenet_nzb_delete_item_from_history(&list->_nzb_id, 1);
 
@@ -760,6 +766,7 @@ static int _progress_callback(void* self, float progress)
 {
 	struct usenet_message _msg;
 	struct uclient* _self = NULL;
+	time_t _now;
 
 	if(self == NULL)
 		return USENET_ERROR;
@@ -768,7 +775,8 @@ static int _progress_callback(void* self, float progress)
 	_self = (struct uclient*) self;
 
 	/* compare the times */
-	if(difftime(_self->_cp_prog_time, time(NULL)) < _self->_login.progress_update_interval)
+	time(&_now);
+	if(difftime(_now, _self->_cp_prog_time) < _self->_login.progress_update_interval)
 		return USENET_SUCCESS;
 
 	/* set the current time */
@@ -834,4 +842,45 @@ static int _echo_scp_done(struct uclient* cli)
 	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
 
 	return USENET_SUCCESS;
+}
+
+static int _create_log_file(struct uclient* cli)
+{
+	int _ret = USENET_ERROR;
+
+	/* open the file with read write permission */
+	cli->_log_fd = open(cli->_login.log_file_path,
+						O_CREAT | O_RDWR | O_APPEND);
+
+	/* duplicate the file to the STDOUT */
+	if(cli->_log_fd == -1) {
+		USENET_LOG_MESSAGE_ARGS("unable to create the log file with error %s "
+								"continuiing with stdout "
+								"file path: %s",
+								strerror(errno),
+								cli->_login.log_file_path);
+		goto clean_up;
+	}
+
+	/* if the file was opened succesfully, we set the file permissions */
+    fchmod(cli->_log_fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+	/* before duplicate flush stdout */
+	fflush(stdout);
+
+	if(dup2(cli->_log_fd, STDOUT_FILENO) == -1) {
+		USENET_LOG_MESSAGE_ARGS("unable to duplicate the log file to stdout with error %s "
+								"continuiing with stdout",
+								strerror(errno));
+		goto clean_up;
+	}
+
+	_ret = USENET_SUCCESS;
+clean_up:
+
+	if(cli->_log_fd != -1)
+		close(cli->_log_fd);
+	cli->_log_fd = -1;
+	return _ret;
+
 }

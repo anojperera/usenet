@@ -78,9 +78,11 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(rsa_private_key);
 	USENET_GET_SETTING_STRING(ssh_port);
 	USENET_GET_SETTING_STRING(destination_folder);
+	USENET_GET_SETTING_STRING(log_file_path);
 	USENET_GET_SETTING_INT(scan_freq);
 	USENET_GET_SETTING_INT(svr_wait_time);
 	USENET_GET_SETTING_INT(nzb_fsize_threshold);
+	USENET_GET_SETTING_INT(progress_update_interval);
 
     return USENET_SUCCESS;
 }
@@ -754,7 +756,7 @@ int usenet_utils_scp_file(struct gapi_login* config,
 
 		/* if the callback function is supplied with this we call to indicate progress */
 		if(prog != NULL)
-			prog(ext_obj, (_prog / _fstat.st_size));
+			prog(ext_obj,  (float) ((float) _prog / (float) _fstat.st_size));
 
 	}while(1);
 

@@ -85,6 +85,7 @@ struct gapi_login
 	const char* rsa_private_key;	/* private key path */
 	const char* ssh_port;			/* ssh port number */
 	const char* destination_folder;	/* destination folder */
+	const char* log_file_path;		/* log file path */
 
 	int scan_freq;					/* frequency scan the instructions */
     int exp;						/* expiry time since unix start */
