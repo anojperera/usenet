@@ -31,35 +31,39 @@
 static inline __attribute__ ((always_inline)) int _usjson_get_exp_time(void);
 static inline __attribute__ ((always_inline)) int _usjson_get_iat_time(void);
 
-
+int _usjson_header_section(struct gapi_login* login, char** json_string, size_t* size);
+int _usjson_claim_set_section(struct gapi_login* login, char** json_string, size_t* size);
 
 int usjson_prepare_jwt(struct gapi_login* login, char** jwt, size_t* size)
 {
 	size_t _header_sz = 0, _claim_sz = 0;
-	char _header[JSONINT_HEADER_SIZE];
-	char _claim[JSONINT_HEADER_SIZE];
+	char* _header = NULL;
+	char* _claim = NULL;
 
 	USENET_LOG_MESSAGE("preparing JWT");
 
+	_header = (char*) malloc(sizeof(char) * JSONINT_HEADER_SIZE);
+	_claim = (char*) malloc(sizeof(char) * JSONINT_HEADER_SIZE);
+
 	/* get header and claim set */
-	usjson_header_section(login, &_header, &_header_sz);
-	usjson_claim_set_section(login, &_claim, &_claim_sz);
+	_usjson_header_section(login, &_header, &_header_sz);
+	_usjson_claim_set_section(login, &_claim, &_claim_sz);
 
 	/* if either header or claim set is not populated we return error */
-	if(!_header_sz > 0 || !_sz > 0) {
+	if(!_header_sz > 0 || !_claim_sz > 0) {
 		USENET_LOG_MESSAGE("unable to create JWT");
 		return USENET_ERROR;
 	}
 
-
-
+	free(_header);
+	free(_claim);
 	return USENET_SUCCESS;
 }
 
-int usjson_header_section(struct gapi_login* login, const char** json_string, size_t* size)
+int _usjson_header_section(struct gapi_login* login, char** json_string, size_t* size)
 {
 	USENET_LOG_MESSAGE("preparing header section of JWT");
-	*size = sprintf(*jons_string,
+	*size = sprintf(*json_string,
 					"{\"%s\":\"%s\",\"%s\":\"%s\"}",
 					JSONINT_AS_STRING(JSONINT_ALG_KEY),
 					login->JSONINT_ALG_KEY,
@@ -69,7 +73,7 @@ int usjson_header_section(struct gapi_login* login, const char** json_string, si
     return USENET_SUCCESS;
 }
 
-int usjson_claim_set_section(struct gapi_login* login, const char** json_string, size_t* size)
+int _usjson_claim_set_section(struct gapi_login* login, char** json_string, size_t* size)
 {
 	int _exp_time = 0, _iat_time = 0;
 
@@ -232,7 +236,7 @@ static inline __attribute__ ((always_inline)) int _usjson_get_exp_time(void)
 static inline __attribute__ ((always_inline)) int _usjson_get_iat_time(void)
 {
 	struct timeval _tm;
-	gettimeofday(&_tm);
+	gettimeofday(&_tm, NULL);
 
 	return _tm.tv_sec;
 }
