@@ -67,6 +67,8 @@
 #define USENET_NZBGET_XMLRESPONSE_MEMBER "member"
 #define USENET_NZBGET_XMLRESPONSE_NAME "name"
 
+#define USENET_CONFIG_YES "Y"
+
 struct gapi_login
 {
     const char* p12_path;			/* path for the p12 cert */
@@ -86,6 +88,8 @@ struct gapi_login
 	const char* ssh_port;			/* ssh port number */
 	const char* destination_folder;	/* destination folder */
 	const char* log_file_path;		/* log file path */
+	const char* log_to_file;		/* flag to indicate log to file */
+	const char* scp_progress;		/* scp progress flag, a callback is called on this flag frequently */
 
 	int scan_freq;					/* frequency scan the instructions */
     int exp;						/* expiry time since unix start */
