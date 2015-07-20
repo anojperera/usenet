@@ -22,6 +22,7 @@
 /* struct to encapsulate server component */
 struct uclient
 {
+	int _progress_flg;											/* scp copy progress flag */
 	int _log_fd;												/* log file descriptor */
 	volatile sig_atomic_t _init_flg;							/* flag to indicate initialised struct */
 
@@ -73,6 +74,7 @@ static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list);
 
 static int _progress_handler(struct uclient* cli, struct usenet_message* msg, jsmntok_t* tok);
 static int _create_log_file(struct uclient* cli);
+static int _set_scp_progress_flg(struct uclient* cli);
 
 /* static void* _thread_handler(void* obj); */
 
@@ -98,7 +100,7 @@ int main(int argc, char** argv)
 			pulse_client(&client);
 
 		sleep(1);
-		if(!(_cnt++ % client._login.svr_wait_time) && _cnt != 1) {
+		if(!(++_cnt > client._login.svr_wait_time) && _cnt != 1) {
 			client._ini_wait_flg ^= 1;
 			_cnt = 0;
 		}
@@ -172,6 +174,10 @@ int init_client(struct uclient* cli)
 	cli->_child_pid = -1;
 	cli->_nzbget_pid = -1;
 	cli->_act_nzb_id = 0;
+	cli->_progress_flg = 0;
+
+	/* set the scp progress flag accordingly */
+	_set_scp_progress_flg(cli);
 
 	/*
 	 * Initialise the progress clock to now.
@@ -179,8 +185,6 @@ int init_client(struct uclient* cli)
 	 * only after a diff will the progress update sent to the server.
 	 */
 	time(&cli->_cp_prog_time);
-
-	/* initialise thread */
 
 	return USENET_SUCCESS;
 }
@@ -627,9 +631,13 @@ static int _check_nzb_list(struct uclient* cli)
 
 		/*
 		 * Rename and copy the file in a forked process.
+		 * If not delete the file in the next round
 		 */
-		if(usenet_utils_rename_file(&_list[_i], cli->_login.nzb_fsize_threshold) == USENET_SUCCESS) {
+		if(usenet_utils_rename_file(&_list[_i], cli->_login.nzb_fsize_threshold) == USENET_SUCCESS)
 			_copy_file(cli, &_list[_i]);
+		else {
+			usenet_nzb_delete_item_from_history(&_list[_i]._nzb_id, 1);
+			cli->_act_nzb_id = 0;
 		}
 
 	}
@@ -678,7 +686,7 @@ static int _copy_file(struct uclient* cli, struct usenet_nzb_filellist* list)
 	if(usenet_utils_scp_file(&cli->_login,
 							 list->_u_r_fpath,
 							 _fname,
-							 NULL,
+							 (cli->_progress_flg? _progress_callback : NULL),
 							 (void*) cli) == USENET_SUCCESS)
 		usenet_nzb_delete_item_from_history(&list->_nzb_id, 1);
 
@@ -833,6 +841,7 @@ static int _echo_scp_done(struct uclient* cli)
 	struct usenet_message _msg;
 
 	/* format the message */
+	USENET_LOG_MESSAGE("copy complete to the remote server");
 	_msg.ins = USENET_REQUEST_BROADCAST;
 	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}",
 			USENET_JSON_FN_HEADER,
@@ -847,6 +856,10 @@ static int _echo_scp_done(struct uclient* cli)
 static int _create_log_file(struct uclient* cli)
 {
 	int _ret = USENET_ERROR;
+
+	/* check if log to file is enabled */
+	if(strcmp(cli->_login.log_to_file, USENET_CONFIG_YES) != 0)
+		goto clean_up;
 
 	/* open the file with read write permission */
 	cli->_log_fd = open(cli->_login.log_file_path,
@@ -883,4 +896,18 @@ clean_up:
 	cli->_log_fd = -1;
 	return _ret;
 
+}
+
+/*
+ * This method gets the config parameter and set the client objects flag
+ * to call the progress method.
+ */
+static int _set_scp_progress_flg(struct uclient* cli)
+{
+	if(strcmp(cli->_login.scp_progress, USENET_CONFIG_YES) == 0)
+		cli->_progress_flg = 1;
+	else
+		cli->_progress_flg = 0;
+
+	return USENET_SUCCESS;
 }

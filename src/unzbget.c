@@ -40,6 +40,9 @@
 #define USENET_ELEMENT_DESCRIPTION "description"
 #define USENET_ELEMENT_PUBDATE "pubDate"
 #define USENET_ELEMENT_URL "url"
+#define USENET_ELEMENT_TITLE "title"
+
+#define USENET_ELEMENT_AVOID_TXT "PASSWORD"
 
 #define USENET_DESCRIPTION_SIZE 512
 #define USENET_DESCRIPTION_TOKEN "<br />"
@@ -72,6 +75,7 @@ struct nzb_item
     char* _pub_date;
     char* _description;
     char* _link;
+	char* _title;
     const char* _alias;
     unsigned int _sz;
     int _time_since_today;
@@ -161,6 +165,9 @@ int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url)
 
 		    if(_items[_i]._link)
 				free(_items[_i]._link);
+
+			if(_items[_i]._title)
+				free(_items[_i]._title);
 		}
 	    free(_items);
 	}
@@ -339,8 +346,15 @@ static int _parse_document(const char* search, xmlDocPtr* doc, const struct sear
 
 			    /* initialise items */
 			    memset(_item, 0, sizeof(struct nzb_item));
+				_item->_pub_date = NULL;
+				_item->_description = NULL;
+				_item->_link = 0;
+				_item->_title = NULL;
+
+				_item->_sz = 0;
 			    _item->_alias = search;
 			    _item->_time_since_today = 0;
+
 			}
 
 
@@ -362,6 +376,9 @@ static int _parse_document(const char* search, xmlDocPtr* doc, const struct sear
 				    _item->_pub_date = (char*) xmlNodeGetContent(_s_child);
 				    _time_stat = strptime(_item->_pub_date, "%a, %d %b %Y %H:%M:%S", &_tm);
 				}
+				else if(strcmp((const char*) _s_child->name, USENET_ELEMENT_TITLE) == 0)
+					_item->_title = (char*) xmlNodeGetContent(_s_child);
+
 
 			    /* if the _tm struct is not NULL, we calculate days since published */
 			    if(_time_stat != NULL)
@@ -433,6 +450,7 @@ static void _queue_delete_helper(void* item)
     _item->_pub_date = NULL;
     _item->_description = NULL;
     _item->_link = NULL;
+	_item->_title = NULL;
     _item->_alias = NULL;
 
     /* free memory allocated by previous */
@@ -528,10 +546,17 @@ static int _get_usenet_item(const struct nzb_item* items, unsigned int sz, const
 
     for(_i=0; _i<_max; _i++)
 	{
+		/* continue with the next one if its passworded */
+		if(items[_i]._title != NULL && strcmp(items[_i]._title, USENET_ELEMENT_AVOID_TXT))
+			continue;
 	    if(*sel_item == NULL)
 		{
 		    for(_j=_i+1; _j<_max; _j++)
 			{
+				/* continue with the next one if its passworded */
+				if(items[_j]._title != NULL && strcmp(items[_j]._title, USENET_ELEMENT_AVOID_TXT))
+					continue;
+
 			    if(items[_i]._time_since_today <=  items[_j]._time_since_today)
 				{
 				    *sel_item = &items[_i];

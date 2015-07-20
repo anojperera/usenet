@@ -78,7 +78,9 @@ int usenet_utils_load_config(struct gapi_login* login)
 	USENET_GET_SETTING_STRING(rsa_private_key);
 	USENET_GET_SETTING_STRING(ssh_port);
 	USENET_GET_SETTING_STRING(destination_folder);
+	USENET_GET_SETTING_STRING(log_to_file);
 	USENET_GET_SETTING_STRING(log_file_path);
+	USENET_GET_SETTING_STRING(scp_progress);
 	USENET_GET_SETTING_INT(scan_freq);
 	USENET_GET_SETTING_INT(svr_wait_time);
 	USENET_GET_SETTING_INT(nzb_fsize_threshold);
@@ -483,7 +485,7 @@ int usenet_utils_rename_file(struct usenet_nzb_filellist* list, int threshold)
 	size_t _nfname_sz = 0;
 	char* _nfname = NULL;										/* full path of the file to be changed */
 
-	int _ret = USENET_SUCCESS;
+	int _ret = USENET_ERROR;
 	DIR* _nzb_dir = NULL;
 	struct dirent* _dir_ent = NULL;
 
@@ -494,7 +496,6 @@ int usenet_utils_rename_file(struct usenet_nzb_filellist* list, int threshold)
 	if(_nzb_dir == NULL) {
 		USENET_LOG_MESSAGE_ARGS("unable to open the directory: %s, exiting rename process.", list->_dest_dir);
 
-		_ret = USENET_ERROR;
 		return _ret;
 	}
 
@@ -512,6 +513,7 @@ int usenet_utils_rename_file(struct usenet_nzb_filellist* list, int threshold)
 		   USENET_CHECK_FILE_EXT(_nfname)) {
 
 			/* break here and operate on the file */
+			_ret = USENET_SUCCESS;
 			break;
 		}
 
@@ -524,15 +526,16 @@ int usenet_utils_rename_file(struct usenet_nzb_filellist* list, int threshold)
 	/* close the directory */
 	closedir(_nzb_dir);
 
-	if(_nfname) {
+	if(_nfname && _ret == USENET_SUCCESS) {
 
 		USENET_LOG_MESSAGE_ARGS("file found %s, with %dMB, list size %dMB", _nfname, USENET_CONV_MB(_sbuf.st_size), list->_file_size);
 		_ret = _usenet_utils_rename_helper(list, _nfname);
-
-		free(_nfname);
 	}
 
-	_nfname = NULL;
+	if(_nfname) {
+		free(_nfname);
+		_nfname = NULL;
+	}
 
 	return _ret;
 }
@@ -818,11 +821,14 @@ static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list,
 
 	USENET_LOG_MESSAGE_ARGS("renaming file %s to %s", file_path, _rfname);
 
-	/* we only do a rename if a original and the new paths are different */
-	_ret = strcmp(file_path, _rfname);
-	if(_ret && rename(file_path, _rfname)) {
+	/*
+	 * We only do a rename if the original and the new paths are different.
+	 * If they are the same we return success and continue with scp
+	 */
+	if(strcmp(file_path, _rfname) != 0 && rename(file_path, _rfname)) {
 		/* errors have occured */
 		USENET_LOG_MESSAGE_ARGS("errors occured while renaming the file with error %i - %s", errno, strerror(errno));
+		_ret = USENET_ERROR;
 	}
 
 	/* set the new file name pointer to the list item */
