@@ -260,7 +260,7 @@ int pulse_client(struct uclient* cli)
 	 */
 	if(cli->_pulse_sent & USENET_PULSE_SENT) {
 		USENET_LOG_MESSAGE("no response from server, raising SIGINT");
-		raise(SIGINT);
+		/* raise(SIGINT); */
 	}
 
 	cli->_ini_wait_flg = 0;

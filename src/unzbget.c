@@ -420,6 +420,7 @@ static int _parse_document(const char* search, xmlDocPtr* doc, const struct sear
 		    _items[_queue_counter]._sz = ((struct nzb_item*) _data)->_sz;
 		    _items[_queue_counter]._alias = ((struct nzb_item*) _data)->_alias;
 		    _items[_queue_counter]._time_since_today = ((struct nzb_item*) _data)->_time_since_today;
+			_items[_queue_counter]._title = ((struct nzb_item*) _data)->_title;
 		    _queue_counter++;
 		    free(_data);
 		}
@@ -547,14 +548,14 @@ static int _get_usenet_item(const struct nzb_item* items, unsigned int sz, const
     for(_i=0; _i<_max; _i++)
 	{
 		/* continue with the next one if its passworded */
-		if(items[_i]._title != NULL && strcmp(items[_i]._title, USENET_ELEMENT_AVOID_TXT))
+		if(items[_i]._title != NULL && strstr(items[_i]._title, USENET_ELEMENT_AVOID_TXT))
 			continue;
 	    if(*sel_item == NULL)
 		{
 		    for(_j=_i+1; _j<_max; _j++)
 			{
 				/* continue with the next one if its passworded */
-				if(items[_j]._title != NULL && strcmp(items[_j]._title, USENET_ELEMENT_AVOID_TXT))
+				if(items[_j]._title != NULL && strstr(items[_j]._title, USENET_ELEMENT_AVOID_TXT))
 					continue;
 
 			    if(items[_i]._time_since_today <=  items[_j]._time_since_today)
