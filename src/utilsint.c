@@ -666,8 +666,7 @@ int usenet_utils_scp_file(struct gapi_login* config,
 	thcon_init(&_thcon, thcon_mode_client);
 
 	/* set destination and port address */
-	/* thcon_set_server_name(&_thcon, config->server_name); */
-	thcon_set_server_name(&_thcon, "192.168.0.6");
+	thcon_set_server_name(&_thcon, config->server_name);
 	thcon_set_port_name(&_thcon, config->ssh_port);
 
 	/* create a raw socket */
