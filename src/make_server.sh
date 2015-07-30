@@ -22,9 +22,9 @@ fi
 
 
 # Make server
-gcc -g -Wall -O0 -o ../bin/server userver.c utilsint.c \
+gcc -g -Wall -O0 -o ../bin/server userver.c utilsint.c $jsmn_inc_path/jsmn.c \
 	 $thor_lib_path $glist_lib_path \
 	-I$include_path -I$jsmn_inc_path -I/usr/include/libxml2/ -I$thor_inc_path \
-	-lm -lpthread -lconfig -lcurl -lxml2 -lssl -lcrypto
+	-lm -lconfig -lcurl -lxml2 -lssh2 -lssl -lcrypto -lpthread
 
 exit 0
