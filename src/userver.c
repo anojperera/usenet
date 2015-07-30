@@ -75,9 +75,8 @@ int main(int argc, char** argv)
 
 		/* send client a new function request if the file was updated */
 		if(usenet_utils_time_diff(USENET_SERVER_JSON_PATH) == server._login.scan_freq &&
-			server._conn_flg &&
-			thcon_wol_device(&server._connection, server._login.mac_addr)) {
-
+			server._conn_flg) {
+			thcon_wol_device(&server._connection, server._login.mac_addr);
 			USENET_LOG_MESSAGE("request json changed, sending request to client to reset index");
 
 			/* reset the index and action flg*/
@@ -377,16 +376,6 @@ static inline __attribute__ ((always_inline)) int _send_function_req(struct user
 
 static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver* svr, struct usenet_message* msg)
 {
-	/* Check for connection parameters */
-	if(svr->_conn_flg == 0)
-		return USENET_SUCCESS;
-
-	if(svr->_active_sock <= 0)
-		return USENET_SUCCESS;
-
-	if(svr->_accept_flg <= 0)
-		return USENET_SUCCESS;
-
 	msg->ins = USENET_REQUEST_RESET;
 	USENET_LOG_MESSAGE("sending message to client");
 	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
