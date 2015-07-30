@@ -377,6 +377,16 @@ static inline __attribute__ ((always_inline)) int _send_function_req(struct user
 
 static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver* svr, struct usenet_message* msg)
 {
+	/* Check for connection parameters */
+	if(svr->_conn_flg == 0)
+		return USENET_SUCCESS;
+
+	if(svr->_active_sock <= 0)
+		return USENET_SUCCESS;
+
+	if(svr->_accept_flg <= 0)
+		return USENET_SUCCESS;
+
 	msg->ins = USENET_REQUEST_RESET;
 	USENET_LOG_MESSAGE("sending message to client");
 	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
