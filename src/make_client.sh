@@ -12,6 +12,10 @@ thor_inc_path="$grand_parent/$thor_include_folder"
 thor_lib_path="$grand_parent/$thor_lib_folder"
 jsmn_inc_path="$parent/external/jsmn/"
 
+# Make bin directory if it doesn't exist
+if [ ! -d ../bin ]; then
+	mkdir ../bin
+fi
 
 gcc -g -Wall -O0 -o ../bin/client uclient.c utilsint.c jsonint.c unzbget.c nzbgetint.c uxmlrpc.c $jsmn_inc_path/jsmn.c \
 	-I$include_path -I/usr/include/libxml2/ -I$thor_inc_path -I$jsmn_inc_path \

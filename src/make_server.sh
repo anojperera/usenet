@@ -15,6 +15,12 @@ jsmn_inc_path="$parent/external/jsmn/"
 thor_lib_path="$grand_parent/$thor_lib_folder"
 glist_lib_path="$grand_parent/$glist_lib_folder"
 
+# Make bin directory if it doesn't exist
+if [ ! -d ../bin ]; then
+	mkdir ../bin
+fi
+
+
 # Make server
 gcc -g -Wall -O0 -o ../bin/server userver.c utilsint.c \
 	 $thor_lib_path $glist_lib_path \
