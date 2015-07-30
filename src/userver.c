@@ -76,7 +76,7 @@ int main(int argc, char** argv)
 		/* send client a new function request if the file was updated */
 		if(usenet_utils_time_diff(USENET_SERVER_JSON_PATH) == server._login.scan_freq &&
 			server._conn_flg &&
-			thcon_wol_device(&svr->_connection, svr->_login.mac_addr)) {
+			thcon_wol_device(server._connection, svr->_login.mac_addr)) {
 
 			USENET_LOG_MESSAGE("request json changed, sending request to client to reset index");
 
