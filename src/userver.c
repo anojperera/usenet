@@ -255,7 +255,7 @@ static int _initialise_contact(struct userver* svr)
 	if(svr->_active_sock <= 0)
 		return USENET_SUCCESS;
 
-	if(svr->_accept_flg <= 0)
+	if(svr->_accept_flg != 0)
 		return USENET_SUCCESS;
 
 	/* send message to client */
