@@ -255,7 +255,7 @@ static int _initialise_contact(struct userver* svr)
 	if(svr->_active_sock <= 0)
 		return USENET_SUCCESS;
 
-	if(svr->_accept_flg != 0)
+	if(svr->_accept_flg <= 0)
 		return USENET_SUCCESS;
 
 	/* send message to client */
@@ -381,11 +381,11 @@ static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver
 	if(svr->_active_sock <= 0)
 		return USENET_SUCCESS;
 
-	if(svr->_accept_flg <= 0)
+	if(svr->_accept_flg != 0)
 		return USENET_SUCCESS;
 
 	msg->ins = USENET_REQUEST_RESET;
-	USENET_LOG_MESSAGE("sending message to client");
+	USENET_LOG_MESSAGE("sending message to client reset request");
 	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
 	return USENET_SUCCESS;
 }
