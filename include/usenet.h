@@ -47,6 +47,9 @@
 #define USENET_USCORE_CHAR 95
 #define USENET_FULLSTOP_CHAR 46
 #define USENET_ASSIGN_CHAR 61
+#define USENET_COMMA_CHAR 44
+#define USENET_OBJECTOP_CHAR 123
+#define USENET_OBJECTCL_CHAR 125
 
 #define USENET_BLANKSPACE_CHAR USENET_SPACE_CHAR
 
@@ -196,7 +199,7 @@ size_t usenet_utils_count_blanks(const char* message);
 /*
  * Utility method for removing unwanted characters.
  */
-int usenet_utils_remove_chars(char* str, size_t len);
+int usenet_utils_remove_chars(char** str, size_t len);
 
 /*
  * Get the access time difference between present time.
