@@ -193,7 +193,6 @@ int usjson_get_token(const char* msg, jsmntok_t* tok, size_t num_tokens, const c
 int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_str_arr* str_arr)
 {
 	int _i = 0;
-	int _sz = 0;
 
 	/* NULL check arguments */
 	if(msg == NULL || tok == NULL || str_arr == NULL) {
@@ -211,11 +210,8 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 	/*  create a char array */
 	USENET_LOG_MESSAGE("going through the json array and copying to the char array");
 
-	_sz = tok->end - tok->start;
 	str_arr->_arr = (char**) calloc(sizeof(char*), tok->size);
 	for(_i = 0; _i < tok->size; _i++) {
-		str_arr->_arr[_i] = (char*) malloc((_sz + 1) * sizeof(char));
-		memset(str_arr->_arr[_i], 0, _sz+1);
 		_usjson_copy_to_str(msg, &tok->start, tok->end, &str_arr->_arr[_i]);
 
 		/* remove other characters */
@@ -230,6 +226,7 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 
 static inline __attribute__ ((always_inline)) int _usjson_copy_to_str(const char* msg, int* start, int end, char** _str)
 {
+	int _sz = 0;
 	const char* _end;
 	const char* _start;
 
@@ -251,8 +248,10 @@ static inline __attribute__ ((always_inline)) int _usjson_copy_to_str(const char
 	}
 
 	/* need to filter the characters */
-	strncpy(*_str, _start, _end - _start);
-	(*_str)[(_end - _start)] = '\0';
+	_sz = _end - _start;
+	*_str = (char*) malloc(sizeof(char) * (_sz + 1));
+	strncpy(*_str, _start, _sz);
+	(*_str)[_sz] = '\0';
 	*start = _end - msg + _extra;
 
 	return USENET_SUCCESS;
