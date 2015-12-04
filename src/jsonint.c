@@ -30,6 +30,7 @@
 /* Helper methods to get various time values */
 static inline __attribute__ ((always_inline)) int _usjson_get_exp_time(void);
 static inline __attribute__ ((always_inline)) int _usjson_get_iat_time(void);
+static inline __attribute__ ((always_inline)) int _usjson_copy_to_str(const char* msg, int* start, int end, char** _str);
 
 int _usjson_header_section(struct gapi_login* login, char** json_string, size_t* size);
 int _usjson_claim_set_section(struct gapi_login* login, char** json_string, size_t* size);
@@ -215,7 +216,7 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 	for(_i = 0; _i < tok->size; _i++) {
 		str_arr->_arr[_i] = (char*) malloc((_sz + 1) * sizeof(char));
 		memset(str_arr->_arr[_i], 0, _sz+1);
-		strncpy(str_arr->_arr[_i], msg + tok->start, _sz);
+		_usjson_copy_to_str(msg, &tok->start, tok->end, &str_arr->_arr[_i]);
 
 		/* remove other characters */
 		USENET_LOG_MESSAGE("cleaning illegal characters in array");
@@ -224,6 +225,36 @@ int usjson_get_token_arr_as_str(const char* msg, jsmntok_t* tok, struct usenet_s
 	}
 
 	str_arr->_sz = tok->size;
+	return USENET_SUCCESS;
+}
+
+static inline __attribute__ ((always_inline)) int _usjson_copy_to_str(const char* msg, int* start, int end, char** _str)
+{
+	const char* _end;
+	const char* _start;
+
+	/*
+	 * Variable to control the return start position.
+	 * If a comma was found, we increment to the next position
+	 * if not reset to zero.
+	 * Its initialised to 2 by default.
+	 */
+	int _extra = 2;
+
+	/* find the end position of the string */
+	_start = msg + *start;
+	_end = strchr(_start, USENET_COMMA_CHAR);
+
+	if(_end == NULL) {
+		_end = msg + *start + end;
+		_extra = 0;
+	}
+
+	/* need to filter the characters */
+	strncpy(*_str, _start, _end - _start);
+	(*_str)[(_end - _start)] = '\0';
+	*start = _end - msg + _extra;
+
 	return USENET_SUCCESS;
 }
 
