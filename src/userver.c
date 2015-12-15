@@ -342,11 +342,12 @@ static int _msg_get_nzb(const char* nzb, const char* msg_body)
 
 	/* if nzb is not NULL */
 	if(nzb != NULL) {
-		return sprintf((char*) msg_body, "{%s:%s,%s:[%s]}",
-					   USENET_SERVER_JSON_FN_HEADER,
-					   USENET_SERVER_JSON_FN_NAME,
-					   USENET_SERVER_JSON_ARG_HEADER,
-					   nzb);
+		return snprintf((char*) msg_body, USENET_JSON_BUFF_SZ,
+						"{%s:%s,%s:[%s]}",
+						USENET_SERVER_JSON_FN_HEADER,
+						USENET_SERVER_JSON_FN_NAME,
+						USENET_SERVER_JSON_ARG_HEADER,
+						nzb);
 	}
 
 	/* read json from file */
