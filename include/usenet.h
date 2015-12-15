@@ -28,6 +28,7 @@
 #define USENET_EXT_LIB_ERROR -3
 
 #define USENET_CMD_BUFF_SZ 1
+#define USENET_SIZE_BUFF_SZ 8
 #define USENET_JSON_BUFF_SZ 151
 #define USENET_LOG_MESSAGE_SZ 256
 #define USENET_PROC_FILE_BUFF_SZ 512
@@ -108,7 +109,8 @@ struct gapi_login
 struct usenet_message
 {
 	unsigned char ins __attribute__ ((aligned (USENET_CMD_BUFF_SZ)));
-	char msg_body[USENET_JSON_BUFF_SZ];
+	unsigned int size __attribute__ ((aligned (USENET_CMD_BUFF_SZ)));
+	char* msg_body;
 };
 
 /* Usenet string array */
@@ -183,10 +185,13 @@ int usenet_utils_destroy_config(struct gapi_login* login);
 
 /* message struc handler methods */
 int usenet_message_init(struct usenet_message* msg);								/* Initialise the message struct */
+int usenet_message_init_with_sz(struct usenet_message* msg, size_t sz);			/* Initialise the message struct with size */
 int usenet_message_request_instruct(struct usenet_message* msg);				/* Send a request instruction to client */
 int usenent_message_response_instruct(struct usenet_message* msg);				/* Response to request */
 int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url);			/* search get and issue rpc call to nzbget */
 int usenet_read_file(const char* path, char** buff, size_t* sz);					/* Read contents of a file pointed by file path */
+int usenet_serialise_message(struct usenet_message* msg, char** buff);			/* Serialise the message into buffer */
+int usenet_unserialise_message(const char* buff, struct usenet_message* msg);	/* unserialise the buffer */
 
 pid_t usenet_find_process(const char* pname);									/* find process id */
 
@@ -314,6 +319,16 @@ static inline void _usenet_log_message_args(const char* msg, const char* fname, 
 
 	return;
 }
+
+/* Helper macro for creating and initialising the buffer */
+#define USENET_CREATE_MESSAGE(msg, sz)							\
+	(msg)->msg_body = (char*) malloc(sizeof(char) * (sz + 1));	\
+	(msg)->size = sz;											\
+	memset(msg->size, 0, sz)
+
+/* Returns the size of the message */
+#define USENET_GET_MSG_SIZE(msg) \
+	(size_t) (msg)->size
 
 #define USENET_LOG_MESSAGE(msg)					\
 	_usenet_log_message(msg, __FILE__, __LINE__)
