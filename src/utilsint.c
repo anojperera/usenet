@@ -129,6 +129,24 @@ int usenet_message_init(struct usenet_message* msg)
 	return USENET_SUCCESS;
 }
 
+/* Initialise with size */
+int usenet_message_init_with_sz(struct usenet_message* msg, size_t sz)
+{
+	if(msg == NULL)
+		return USENET_ERROR;
+
+	memset(msg, 0, sizeof(struct usenet_message));
+
+	/* Check the difference in size */
+	if(sz < (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ))
+		return USENET_ERROR;
+
+	/* create the message and initialise the buffer */
+	USENET_CREATE_MESSAGE(msg, sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ));
+
+	return USENET_SUCCESS;
+}
+
 /* Send a request instruction to client */
 int usenet_message_request_instruct(struct usenet_message* msg)
 {
