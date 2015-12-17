@@ -109,7 +109,7 @@ struct gapi_login
 struct usenet_message
 {
 	unsigned char ins __attribute__ ((aligned (USENET_CMD_BUFF_SZ)));
-	unsigned int size __attribute__ ((aligned (USENET_CMD_BUFF_SZ)));
+	unsigned int size __attribute__ ((aligned (USENET_SIZE_BUFF_SZ)));
 	char* msg_body;
 };
 
@@ -184,16 +184,18 @@ int usenet_utils_destroy_config(struct gapi_login* login);
 #define usenet_destroy_config usenet_utils_destroy_config
 
 /* message struc handler methods */
-int usenet_message_init(struct usenet_message* msg);								/* Initialise the message struct */
-int usenet_message_init_with_sz(struct usenet_message* msg, size_t sz);			/* Initialise the message struct with size */
-int usenet_message_request_instruct(struct usenet_message* msg);				/* Send a request instruction to client */
-int usenent_message_response_instruct(struct usenet_message* msg);				/* Response to request */
-int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url);			/* search get and issue rpc call to nzbget */
-int usenet_read_file(const char* path, char** buff, size_t* sz);					/* Read contents of a file pointed by file path */
-int usenet_serialise_message(struct usenet_message* msg, char** buff);			/* Serialise the message into buffer */
-int usenet_unserialise_message(const char* buff, struct usenet_message* msg);	/* unserialise the buffer */
+int usenet_message_init(struct usenet_message* msg);											/* Initialise the message struct */
+int usenet_message_init_with_sz(struct usenet_message* msg, size_t sz);						/* Initialise the message struct with size */
+int usenet_message_request_instruct(struct usenet_message* msg);							/* Send a request instruction to client */
+int usenent_message_response_instruct(struct usenet_message* msg);							/* Response to request */
+int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url);						/* search get and issue rpc call to nzbget */
+int usenet_read_file(const char* path, char** buff, size_t* sz);								/* Read contents of a file pointed by file path */
+int usenet_serialise_message(struct usenet_message* msg, data** buff, size_t* sz);			/* Serialise the message into buffer */
 
-pid_t usenet_find_process(const char* pname);									/* find process id */
+/* unserialise the buffer */
+int usenet_unserialise_message(const data* buff, const size_t sz, struct usenet_message* msg);
+
+pid_t usenet_find_process(const char* pname);												/* find process id */
 
 /*
  * Count the number of blank spaces in a given string,
