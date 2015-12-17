@@ -213,8 +213,9 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	USENET_LOG_MESSAGE("message received from server");
 
 	_client = (struct uclient*) self;
-	usenet_message_init(&_msg);
-	memcpy(&_msg, data, sz);
+	usenet_message_init_with_sz(&_msg, sz);
+	usenet_unserialise_message(data, sz, &_msg);
+
 
 	/* we receive some thing therefore pulse flag is reset */
 	_client->_pulse_sent = USENET_PULSE_RESET;
