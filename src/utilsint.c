@@ -764,6 +764,41 @@ cleanup:
 	return _ret;
 }
 
+/* Serialise the message into buffer */
+int usenet_serialise_message(struct usenet_message* msg, data** buff, size_t* sz)
+{
+	/* get the buffer size */
+	*sz += USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ + USENET_GET_MSG_SIZE(msg);
+
+	*buff = malloc(sizeof(char) * (*sz));
+
+	/* pack the buffer with message contents */
+	memcpy(*buff, msg->ins, USENET_CMD_BUFF_SZ);
+	memcpy(*buff + USENET_CMD_BUFF_SZ, msg->size, USENET_SIZE_BUFF_SZ);
+	memcpy(*buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ, msg->msg_body, msg->size);
+
+	/* return the total size */
+	return USENET_SUCCESS;
+}
+
+/* unserialise the buffer */
+int usenet_unserialise_message(const data* buff, const size_t sz, struct usenet_message* msg)
+{
+	size_t _buff_sz = 0;
+
+	/* check buffer size */
+	if(sz < (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ))
+		return USENET_ERROR;
+
+	/* copy the bytes to the message struct */
+	memcpy(&msg->ins, buff, USENET_CMD_BUFF_SZ);
+	memcpy(&msg->size, buff + USENET_CMD_BUFF_SZ, USENET_SIZE_BUFF_SZ);
+
+	msg->msg_body = (char*) malloc(sizeof(char) * (sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)));
+	memcpy(msg->msg_body, buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ, msg->size);
+
+	return USENET_SUCCESS;
+}
 
 /* helper method for renaming the file */
 static const int _usenet_utils_rename_helper(struct  usenet_nzb_filellist* list, const char* file_path)
