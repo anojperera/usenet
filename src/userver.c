@@ -188,8 +188,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 		return USENET_ERROR;
 
 	_server = (struct userver*) self;
-
-	memcpy(&_msg, data, sz);
+	usenet_unserialise_message(data, sz, &_msg);
 
 	USENET_LOG_MESSAGE_ARGS("message received from client, action ix: %i", _server->_act_ix);
 	_msg_handler(_server, &_msg);
@@ -263,7 +262,7 @@ static int _initialise_contact(struct userver* svr)
 	usenet_message_request_instruct(&_msg);
 
 	USENET_LOG_MESSAGE("sending handshake to client waiting for response");
-	thcon_send_info(&svr->_connection, &_msg, sizeof(struct usenet_message));
+	thcon_send_info(&svr->_connection, &_msg, USENET_GET_MSG_SIZE(_msg));
 
 	return USENET_SUCCESS;
 }
@@ -276,6 +275,8 @@ static void _signal_hanlder(int signal)
 
 static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 {
+	void* _data;
+	size_t _size;
 
 	/* check if handshake is required */
 	switch(svr->_act_ix) {
@@ -325,8 +326,12 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 
 	/* echo back the message if its pulse or broadcast */
 	if(msg->ins == USENET_REQUEST_PULSE || msg->ins == USENET_REQUEST_BROADCAST) {
-		thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+		usenet_serialise_message(msg, &_data, &_size);
+		thcon_send_info(&svr->_connection, msg, USENET_GET_MSG_SIZE(msg));
 		USENET_LOG_MESSAGE("sent client response");
+
+		if(_data != NULL && _size > 0)
+			free(_data);
 	}
 
 	return 0;
@@ -370,7 +375,7 @@ static inline __attribute__ ((always_inline)) int _send_function_req(struct user
 	_msg_get_nzb(NULL, msg->msg_body);
 
 	USENET_LOG_MESSAGE("sending message to client");
-	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+	thcon_send_info(&svr->_connection, msg, USENET_GET_MSG_SIZE(msg));
 	return USENET_SUCCESS;
 }
 
