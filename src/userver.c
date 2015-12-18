@@ -250,7 +250,10 @@ static int _conn_made(void* self, void* conn)
 /* Send message to the client */
 static int _initialise_contact(struct userver* svr)
 {
+	void* _data = NULL;
+	size_t _size = 0;
 	struct usenet_message _msg;
+
 	if(svr->_conn_flg == 0)
 		return USENET_SUCCESS;
 
@@ -264,8 +267,14 @@ static int _initialise_contact(struct userver* svr)
 	usenet_message_init(&_msg);
 	usenet_message_request_instruct(&_msg);
 
+	/* serialise the message */
+	USENET_LOG_MESSAGE("serialising message");
+	usenet_serialise_message(_msg, &_data, &_size);
+
 	USENET_LOG_MESSAGE("sending handshake to client waiting for response");
-	thcon_send_info(&svr->_connection, &_msg, USENET_GET_MSG_SIZE(_msg));
+	thcon_send_info(&svr->_connection, _data, _size);
+
+	free(_data);
 
 	return USENET_SUCCESS;
 }
