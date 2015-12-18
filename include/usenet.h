@@ -328,6 +328,16 @@ static inline void _usenet_log_message_args(const char* msg, const char* fname, 
 	(msg)->size = sz + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ;											\
 	memset(msg->size, 0, sz)
 
+/* Destroy the message buffer */
+#define USENET_DESTROY_MESSAGE_BUFFER(msg) \
+	{																	\
+		if(msg->size > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ) &&	\
+		   msg->msg_body != NULL) {										\
+			free(msg->msg_body);										\
+			msg->msg_body = NULL;										\
+		}																\
+	}
+
 /* Returns the size of the message */
 #define USENET_GET_MSG_SIZE(msg) \
 	(size_t) (msg)->size
