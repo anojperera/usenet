@@ -193,6 +193,9 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	USENET_LOG_MESSAGE_ARGS("message received from client, action ix: %i", _server->_act_ix);
 	_msg_handler(_server, &_msg);
 
+	/* destroy the message object */
+	USENET_DESTROY_MESSAGE_BUFFER(_msg);
+
 	return USENET_SUCCESS;
 }
 
@@ -327,7 +330,7 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 	/* echo back the message if its pulse or broadcast */
 	if(msg->ins == USENET_REQUEST_PULSE || msg->ins == USENET_REQUEST_BROADCAST) {
 		usenet_serialise_message(msg, &_data, &_size);
-		thcon_send_info(&svr->_connection, msg, USENET_GET_MSG_SIZE(msg));
+		thcon_send_info(&svr->_connection, _data, _size);
 		USENET_LOG_MESSAGE("sent client response");
 
 		if(_data != NULL && _size > 0)
@@ -371,16 +374,28 @@ static int _msg_get_nzb(const char* nzb, const char* msg_body)
 
 static inline __attribute__ ((always_inline)) int _send_function_req(struct userver* svr, struct usenet_message* msg)
 {
+	void* _data = NULL;
+	size_t _size = 0;
+
 	msg->ins = USENET_REQUEST_FUNCTION;
 	_msg_get_nzb(NULL, msg->msg_body);
 
+	USENET_LOG_MESSAGE("serialising the buffer");
+	usenet_serialise_message(msg, &_data, &_size);
+
 	USENET_LOG_MESSAGE("sending message to client");
-	thcon_send_info(&svr->_connection, msg, USENET_GET_MSG_SIZE(msg));
+	thcon_send_info(&svr->_connection, _data, _size);
+
+	/* once sent destroy the buffer */
+	free(_data);
 	return USENET_SUCCESS;
 }
 
 static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver* svr, struct usenet_message* msg)
 {
+	void* _data = NULL;
+	size_t _size = 0;
+
 	if(svr->_conn_flg == 0)
 		return USENET_SUCCESS;
 
@@ -391,8 +406,15 @@ static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver
 		return USENET_SUCCESS;
 
 	msg->ins = USENET_REQUEST_RESET;
+
+	USENET_LOG_MESSAGE("serialising message");
+	/* serialise the buffer */
+	usenet_serialise_message(msg, &_data, &_size);
+
 	USENET_LOG_MESSAGE("sending message to client reset request");
-	thcon_send_info(&svr->_connection, msg, sizeof(struct usenet_message));
+	thcon_send_info(&svr->_connection, _data, _size);
+
+	free(_data);
 	return USENET_SUCCESS;
 }
 
