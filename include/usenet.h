@@ -325,7 +325,7 @@ static inline void _usenet_log_message_args(const char* msg, const char* fname, 
 /* Helper macro for creating and initialising the buffer */
 #define USENET_CREATE_MESSAGE(msg, sz)							\
 	(msg)->msg_body = (char*) malloc(sizeof(char) * (sz + 1));	\
-	(msg)->size = sz;											\
+	(msg)->size = sz + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ;											\
 	memset(msg->size, 0, sz)
 
 /* Returns the size of the message */
