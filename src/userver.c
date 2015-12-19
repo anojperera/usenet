@@ -48,7 +48,7 @@ static inline __attribute__ ((always_inline)) int _send_reset_req(struct userver
 static inline __attribute__ ((always_inline)) int _reset_ix_conn_flg(struct userver* svr);
 
 /* Methods for constructing jsons */
-static int _msg_get_nzb(const char* nzb, const char* msg_body);
+static int _msg_get_nzb(const char* nzb, struct usenet_message* msg);
 
 /* starts  the server */
 int init_server(struct userver* svr);
@@ -350,7 +350,7 @@ static int _msg_handler(struct userver* svr, struct usenet_message* msg)
 }
 
 /* construct message */
-static int _msg_get_nzb(const char* nzb, const char* msg_body)
+static int _msg_get_nzb(const char* nzb, struct usenet_message* msg)
 {
 	char* _buff = NULL;
 	size_t _sz = 0;
@@ -359,7 +359,11 @@ static int _msg_get_nzb(const char* nzb, const char* msg_body)
 
 	/* if nzb is not NULL */
 	if(nzb != NULL) {
-		return snprintf((char*) msg_body, USENET_JSON_BUFF_SZ,
+		msg->msg_body = (char*) malloc(sizeof(char) * USENET_JSON_BUFF_SZ);
+		memset(msg->msg_body, 0, sizeof(char)*USENET_JSON_BUFF_SZ);
+		msg->size += USENET_JSON_BUFF_SZ;
+
+		return snprintf(msg->msg_body, USENET_JSON_BUFF_SZ,
 						"{%s:%s,%s:[%s]}",
 						USENET_SERVER_JSON_FN_HEADER,
 						USENET_SERVER_JSON_FN_NAME,
@@ -372,8 +376,10 @@ static int _msg_get_nzb(const char* nzb, const char* msg_body)
 
 	if(_buff != NULL && _sz > 0) {
 		USENET_LOG_MESSAGE("copying request json to message body");
-		strncpy((char*) msg_body, _buff, USENET_SERVER_JSON_SZ-1);
-		_buff[USENET_SERVER_JSON_SZ-1] = '\0';
+		msg->msg_body = (char*) malloc(_sz+1);
+		strncpy((char*) msg->msg_body, _buff, _sz);
+		msg->msg_body[_sz] = '\0';
+		msg->size += _sz;
 	}
 	if(_buff != NULL)
 		free(_buff);
@@ -387,7 +393,7 @@ static inline __attribute__ ((always_inline)) int _send_function_req(struct user
 	size_t _size = 0;
 
 	msg->ins = USENET_REQUEST_FUNCTION;
-	_msg_get_nzb(NULL, msg->msg_body);
+	_msg_get_nzb(NULL, msg);
 
 	USENET_LOG_MESSAGE("serialising the buffer");
 	usenet_serialise_message(msg, &_data, &_size);
