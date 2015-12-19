@@ -226,6 +226,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	 * to the server.
 	 */
 	_msg_handler(_client, &_msg);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 
 	return 0;
 }
@@ -278,15 +279,20 @@ static void _signal_hanlder(int signal)
 /* Default reponse */
 static int _default_response(struct uclient* client, struct usenet_message* msg)
 {
+	void* _data = NULL;
+	size_t _size = 0;
+
+	usenet_serialise_message(msg, &_data, &_size);
 	USENET_LOG_MESSAGE("sending default response");
 	msg->ins = USENET_REQUEST_RESPONSE;
-	thcon_send_info(&client->_connection, msg, sizeof(struct usenet_message));
+	thcon_send_info(&client->_connection, _data, _size);
 
 	/*
 	 * after successfully initialised, set the init flg
 	 * to send a pulse to the server.
 	 */
 	client->_init_flg = 1;
+	free(_data);
 	return 0;
 }
 
@@ -424,14 +430,28 @@ static int _action_json(struct uclient* cli, const char* json_msg)
 static int _echo_daemon_check_to_parent(struct uclient* cli)
 {
 	struct usenet_message _msg;
+	void* _data = NULL;
+	size_t _size = 0;
 
+	usenet_message_init(&_msg);
 	_msg.ins = USENET_REQUEST_BROADCAST;
-	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}", USENET_JSON_FN_HEADER, USENET_JSON_FN_1, USENET_JSON_ARG_HEADER);
+	_msg.msg_body = (char*) malloc(sizeof(char)*USENET_JSON_BUFF_SZ);
+	_msg.size += USENET_JSON_BUFF_SZ;
+	memset(_msg.msg_body, 0, sizeof(char)*USENET_JSON_BUFF_SZ);
+
+	snprintf(_msg.msg_body,
+			 USENET_JSON_BUFF_SZ,
+			 "{\"%s\": \"%s\", \"%s\": []}",
+			 USENET_JSON_FN_HEADER, USENET_JSON_FN_1, USENET_JSON_ARG_HEADER);
+
+	USENET_LOG_MESSAGE("serialise message");
+	usenet_serialise_message(&_msg, &_data, &_size);
 
 	USENET_LOG_MESSAGE("broadcasting message to parent to indicate it I am complete");
+	thcon_send_info(&cli->_connection, _data, _size);
 
-	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
-
+	free(_data);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 	return USENET_SUCCESS;
 }
 
@@ -549,19 +569,34 @@ static int _terminate_client(struct uclient* cli, pid_t child)
 static int _echo_update_list(struct uclient* cli)
 {
 	struct usenet_message _msg;
+	void* _data = NULL;
+	size_t _size = 0;
 
+	usenet_message_init(&_msg);
 	_msg.ins = USENET_REQUEST_BROADCAST;
-	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}", USENET_JSON_FN_HEADER, USENET_JSON_FN_2, USENET_JSON_ARG_HEADER);
+
+	_msg.msg_body = (char*) malloc(sizeof(char) * USENET_JSON_BUFF_SZ);
+	memset(_msg.msg_body, 0, sizeof(char) * USENET_JSON_BUFF_SZ);
+	snprintf(_msg.msg_body,
+			 USENET_JSON_BUFF_SZ,
+			 "{\"%s\": \"%s\", \"%s\": []}",
+			 USENET_JSON_FN_HEADER, USENET_JSON_FN_2, USENET_JSON_ARG_HEADER);
+
+	/* serialise the message */
+	USENET_LOG_MESSAGE("serialising the message");
+	usenet_serialise_message(&_msg, &_data, &_size);
 
 	USENET_LOG_MESSAGE("broadcasting message update list");
-
-	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
+	thcon_send_info(&cli->_connection, _data, _size);
 
 	/*
 	 * we turn the probe flag off as we don't want nzbget to
 	 * scan continuously.
 	 */
 	cli->_probe_nzb_flg = 0;
+
+	free(_data);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 	return USENET_SUCCESS;
 }
 
@@ -569,17 +604,28 @@ static inline __attribute__ ((always_inline)) int _send_pulse(struct uclient* cl
 {
 	struct usenet_message _msg = {0};
 	thcon* _con = NULL;
+	void* _data = NULL;
+	size_t _size = 0;
 
-	memset(&_msg, 0, sizeof(struct usenet_message));
+	usenet_message_init(&_msg);
 	_msg.ins = USENET_REQUEST_PULSE;
-	sprintf(_msg.msg_body, "%s", "alive");
+	_msg.msg_body = (char*) malloc(sizeof(char) * USENET_JSON_BUFF_SZ);
+	memset(_msg.msg_body, 0, sizeof(char) * USENET_JSON_BUFF_SZ);
+
+	snprintf(_msg.msg_body, sizeof(char) * USENET_JSON_BUFF_SZ, "%s", "alive");
+
+	/* serialise the buffer */
+	USENET_LOG_MESSAGE("serialising the message");
+	usenet_serialise_message(&_msg, &_data, &_size);
 
 	/* get pointer to the connection object */
 	_con = &client->_connection;
 
 	USENET_LOG_MESSAGE("sending server pulse");
-	thcon_send_info(_con, (void*) &_msg, sizeof(struct usenet_message));
+	thcon_send_info(_con, _data, _size);
 
+	free(_data);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 	return USENET_SUCCESS;
 }
 
@@ -707,23 +753,35 @@ static int _echo_scp_complete(struct uclient* cli)
 {
 	pid_t _pid;
 	struct usenet_message _msg;
+	void* _data = NULL;
+	size_t _size = 0;
 
 	/* get the pid */
 	_pid = getpid();
 
 	/* format the message */
+	usenet_message_init(&_msg);
 	_msg.ins = USENET_REQUEST_BROADCAST;
-	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": [\"%i\"]}",
+	_msg.msg_body = (char*) malloc(sizeof(char)*USENET_JSON_BUFF_SZ);
+	memset(_msg.msg_body, 0, sizeof(char)*USENET_JSON_BUFF_SZ);
+
+	snprintf(_msg.msg_body,
+			 USENET_JSON_BUFF_SZ,
+			 "{\"%s\": \"%s\", \"%s\": [\"%i\"]}",
 			USENET_JSON_FN_HEADER,
 			USENET_JSON_FN_3,
 			USENET_JSON_ARG_HEADER,
 			_pid);
 
+	/* serialise the message */
+	USENET_LOG_MESSAGE("serialising the message");
+	usenet_serialise_message(&_msg, &_data, &_size);
 
 	USENET_LOG_MESSAGE_ARGS("broadcasting message, %s, scp complete", _msg.msg_body);
+	thcon_send_info(&cli->_connection, _data, _size);
 
-	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
-
+	free(_data);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 	return USENET_SUCCESS;
 }
 
@@ -775,6 +833,8 @@ static int _progress_callback(void* self, float progress)
 {
 	struct usenet_message _msg;
 	struct uclient* _self = NULL;
+	void* _data = NULL;
+	size_t _size = 0;
 	time_t _now;
 
 	if(self == NULL)
@@ -792,15 +852,27 @@ static int _progress_callback(void* self, float progress)
 	time(&_self->_cp_prog_time);
 
 	/* format the message */
+	usenet_message_init(&_msg);
 	_msg.ins = USENET_REQUEST_BROADCAST;
-	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": [\"%.1f\"]}",
+	_msg.msg_body = (char*) malloc(sizeof(char) * USENET_JSON_BUFF_SZ);
+	memset(_msg.msg_body, 0, sizeof(char) * USENET_JSON_BUFF_SZ);
+
+	snprintf(_msg.msg_body,
+			 USENET_JSON_BUFF_SZ,
+			 "{\"%s\": \"%s\", \"%s\": [\"%.1f\"]}",
 			USENET_JSON_FN_HEADER,
 			USENET_JSON_FN_4,
 			USENET_JSON_ARG_HEADER,
 			progress);
 
-	thcon_send_info(&_self->_connection, (void*) &_msg, sizeof(struct usenet_message));
+	/* serialise the buffer */
+	usenet_serialise_message(&_msg, &_data, &_size);
 
+	/* no logging is done here to minimise stdout */
+	thcon_send_info(&_self->_connection, _data, _size);
+
+	free(_data);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 	return USENET_SUCCESS;
 }
 
@@ -840,17 +912,29 @@ static int _progress_handler(struct uclient* cli, struct usenet_message* msg, js
 static int _echo_scp_done(struct uclient* cli)
 {
 	struct usenet_message _msg;
+	void* _data = NULL;
+	size_t _size = 0;
 
 	/* format the message */
 	USENET_LOG_MESSAGE("copy complete to the remote server");
+	usenet_message_init(&_msg);
 	_msg.ins = USENET_REQUEST_BROADCAST;
-	sprintf(_msg.msg_body, "{\"%s\": \"%s\", \"%s\": []}",
+
+	_msg.msg_body = (char*) malloc(sizeof(char) * USENET_JSON_BUFF_SZ);
+	memset(_msg.msg_body, 0, sizeof(char) * USENET_JSON_BUFF_SZ);
+
+	sprintf(_msg.msg_body,
+			"{\"%s\": \"%s\", \"%s\": []}",
 			USENET_JSON_FN_HEADER,
 			USENET_JSON_FN_5,
 			USENET_JSON_ARG_HEADER);
 
-	thcon_send_info(&cli->_connection, (void*) &_msg, sizeof(struct usenet_message));
+	/* serialise the message */
+	usenet_serialise_message(&_msg, &_data, &_size);
+	thcon_send_info(&cli->_connection, _data, _size);
 
+	free(_data);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 	return USENET_SUCCESS;
 }
 

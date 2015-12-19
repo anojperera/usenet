@@ -126,6 +126,8 @@ int usenet_message_init(struct usenet_message* msg)
 		return USENET_ERROR;
 
 	memset(msg, 0, sizeof(struct usenet_message));
+	msg->size = USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ;
+	msg->msg_body = NULL;
 	return USENET_SUCCESS;
 }
 
@@ -765,27 +767,35 @@ cleanup:
 }
 
 /* Serialise the message into buffer */
-int usenet_serialise_message(struct usenet_message* msg, data** buff, size_t* sz)
+int usenet_serialise_message(struct usenet_message* msg, void** buff, size_t* sz)
 {
 	/* get the buffer size */
-	*sz += USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ + USENET_GET_MSG_SIZE(msg);
+	*sz = USENET_GET_MSG_SIZE(msg);
 
 	*buff = malloc(sizeof(char) * (*sz));
 
 	/* pack the buffer with message contents */
-	memcpy(*buff, msg->ins, USENET_CMD_BUFF_SZ);
-	memcpy(*buff + USENET_CMD_BUFF_SZ, msg->size, USENET_SIZE_BUFF_SZ);
-	memcpy(*buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ, msg->msg_body, msg->size);
+	memcpy(*buff, &msg->ins, USENET_CMD_BUFF_SZ);
+	memcpy(*buff + USENET_CMD_BUFF_SZ, &msg->size, USENET_SIZE_BUFF_SZ);
+
+	/*
+	 * copy to the message buffer if its not NULL and the length is greather than
+	 * standard.
+	 */
+	if(msg->msg_body != NULL &&
+	   *sz > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)) {
+		memcpy(*buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ,
+			   msg->msg_body,
+			   msg->size - USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ);
+	}
 
 	/* return the total size */
 	return USENET_SUCCESS;
 }
 
 /* unserialise the buffer */
-int usenet_unserialise_message(const data* buff, const size_t sz, struct usenet_message* msg)
+int usenet_unserialise_message(const void* buff, const size_t sz, struct usenet_message* msg)
 {
-	size_t _buff_sz = 0;
-
 	/* check buffer size */
 	if(sz < (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ))
 		return USENET_ERROR;
@@ -793,9 +803,13 @@ int usenet_unserialise_message(const data* buff, const size_t sz, struct usenet_
 	/* copy the bytes to the message struct */
 	memcpy(&msg->ins, buff, USENET_CMD_BUFF_SZ);
 	memcpy(&msg->size, buff + USENET_CMD_BUFF_SZ, USENET_SIZE_BUFF_SZ);
-
-	msg->msg_body = (char*) malloc(sizeof(char) * (sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)));
-	memcpy(msg->msg_body, buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ, msg->size);
+	msg->msg_body = NULL;
+	if(sz > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)) {
+		msg->msg_body = (char*) malloc(sizeof(char) * (sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)));
+		memcpy(msg->msg_body,
+			   buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ,
+			   msg->size - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ));
+	}
 
 	return USENET_SUCCESS;
 }

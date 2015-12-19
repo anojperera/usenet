@@ -190,10 +190,10 @@ int usenet_message_request_instruct(struct usenet_message* msg);							/* Send a
 int usenent_message_response_instruct(struct usenet_message* msg);							/* Response to request */
 int usenet_nzb_search_and_get(const char* nzb_desc, const char* s_url);						/* search get and issue rpc call to nzbget */
 int usenet_read_file(const char* path, char** buff, size_t* sz);								/* Read contents of a file pointed by file path */
-int usenet_serialise_message(struct usenet_message* msg, data** buff, size_t* sz);			/* Serialise the message into buffer */
+int usenet_serialise_message(struct usenet_message* msg, void** buff, size_t* sz);			/* Serialise the message into buffer */
 
 /* unserialise the buffer */
-int usenet_unserialise_message(const data* buff, const size_t sz, struct usenet_message* msg);
+int usenet_unserialise_message(const void* buff, const size_t sz, struct usenet_message* msg);
 
 pid_t usenet_find_process(const char* pname);												/* find process id */
 
@@ -326,15 +326,15 @@ static inline void _usenet_log_message_args(const char* msg, const char* fname, 
 #define USENET_CREATE_MESSAGE(msg, sz)							\
 	(msg)->msg_body = (char*) malloc(sizeof(char) * (sz + 1));	\
 	(msg)->size = sz + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ;											\
-	memset(msg->size, 0, sz)
+	memset(msg->msg_body, 0, sz)
 
 /* Destroy the message buffer */
 #define USENET_DESTROY_MESSAGE_BUFFER(msg) \
 	{																	\
-		if(msg->size > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ) &&	\
-		   msg->msg_body != NULL) {										\
-			free(msg->msg_body);										\
-			msg->msg_body = NULL;										\
+		if((msg)->size > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ) &&	\
+		   (msg)->msg_body != NULL) {									\
+			free((msg)->msg_body);										\
+			(msg)->msg_body = NULL;										\
 		}																\
 	}
 

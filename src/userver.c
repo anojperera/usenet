@@ -194,7 +194,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	_msg_handler(_server, &_msg);
 
 	/* destroy the message object */
-	USENET_DESTROY_MESSAGE_BUFFER(_msg);
+	USENET_DESTROY_MESSAGE_BUFFER(&_msg);
 
 	return USENET_SUCCESS;
 }
@@ -269,7 +269,7 @@ static int _initialise_contact(struct userver* svr)
 
 	/* serialise the message */
 	USENET_LOG_MESSAGE("serialising message");
-	usenet_serialise_message(_msg, &_data, &_size);
+	usenet_serialise_message(&_msg, &_data, &_size);
 
 	USENET_LOG_MESSAGE("sending handshake to client waiting for response");
 	thcon_send_info(&svr->_connection, _data, _size);
