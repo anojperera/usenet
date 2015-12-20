@@ -126,6 +126,7 @@ int usenet_message_init(struct usenet_message* msg)
 		return USENET_ERROR;
 
 	memset(msg, 0, sizeof(struct usenet_message));
+	msg->ins = USENET_REQUEST_RESPONSE;
 	msg->size = USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ;
 	msg->msg_body = NULL;
 	return USENET_SUCCESS;
@@ -805,10 +806,12 @@ int usenet_unserialise_message(const void* buff, const size_t sz, struct usenet_
 	memcpy(&msg->size, buff + USENET_CMD_BUFF_SZ, USENET_SIZE_BUFF_SZ);
 	msg->msg_body = NULL;
 	if(sz > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)) {
-		msg->msg_body = (char*) malloc(sizeof(char) * (sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)));
+		msg->msg_body = (char*) malloc(sizeof(char) * (sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)+1));
+		memset(msg->msg_body, 0, sizeof(char) * (sz - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)));
 		memcpy(msg->msg_body,
 			   buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ,
 			   msg->size - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ));
+		msg->msg_body[msg->size - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)] = '\0';
 	}
 
 	return USENET_SUCCESS;
