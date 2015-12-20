@@ -207,7 +207,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	 * If the size is less than 0 or the size is greater
 	 * than the message size we exit
 	 */
-	if(sz <= 0 || sz > THORNIFIX_MSG_BUFF_SZ)
+	if(sz <= 0)
 		return USENET_SUCCESS;
 
 	USENET_LOG_MESSAGE("message received from server");
@@ -282,9 +282,10 @@ static int _default_response(struct uclient* client, struct usenet_message* msg)
 	void* _data = NULL;
 	size_t _size = 0;
 
-	usenet_serialise_message(msg, &_data, &_size);
-	USENET_LOG_MESSAGE("sending default response");
 	msg->ins = USENET_REQUEST_RESPONSE;
+	usenet_serialise_message(msg, &_data, &_size);
+
+	USENET_LOG_MESSAGE("sending default response");
 	thcon_send_info(&client->_connection, _data, _size);
 
 	/*

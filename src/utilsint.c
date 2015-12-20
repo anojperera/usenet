@@ -786,7 +786,7 @@ int usenet_serialise_message(struct usenet_message* msg, void** buff, size_t* sz
 	   *sz > (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ)) {
 		memcpy(*buff + USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ,
 			   msg->msg_body,
-			   msg->size - USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ);
+			   msg->size - (USENET_CMD_BUFF_SZ + USENET_SIZE_BUFF_SZ));
 	}
 
 	/* return the total size */

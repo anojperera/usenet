@@ -181,7 +181,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 	struct usenet_message _msg;
 
 
-	if(sz <= 0 || sz > THORNIFIX_MSG_BUFF_SZ)
+	if(sz <= 0)
 		return USENET_ERROR;
 
 	if(self == NULL)
