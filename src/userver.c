@@ -79,6 +79,7 @@ int main(int argc, char** argv)
 			USENET_LOG_MESSAGE("request json changed, sending request to client to reset index");
 
 			/* reset the index and action flg*/
+			usenet_message_init(&_msg);
 			_send_reset_req(&server, &_msg);
 		}
 
@@ -188,6 +189,7 @@ static int _data_receive_callback(void* self, void* data, size_t sz)
 		return USENET_ERROR;
 
 	_server = (struct userver*) self;
+	usenet_message_init(&_msg);
 	usenet_unserialise_message(data, sz, &_msg);
 
 	USENET_LOG_MESSAGE_ARGS("message received from client, action ix: %i", _server->_act_ix);
